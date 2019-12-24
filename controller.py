@@ -10,14 +10,48 @@ LED_STRIP = ws.SK6812W_STRIP
 strip = PixelStrip(LED_COUNT, GPIO_PIN, strip_type=LED_STRIP)
 scene = Scene([Layer(Color(0, 255, 0, 255))])
 
-def drawFrame(strip: PixelStrip, scene: Scene) -> None:
+def drawFrame(strip: PixelStrip, scene: Scene, time: float) -> None:
   for i in range(strip.numPixels()):
-    strip.setPixelColor(i, scene.getColorAtPosition((i + 0.5) / strip.numPixels()))
+    strip.setPixelColor(i, scene.getColorAtPositionAndTime((i + 0.5) / strip.numPixels(), time))
   strip.show()
 
 
+class Animation(Protocol):
+  def __init__(self, keyframes: List[Keyframe], repeat = inf) -> None:
+    self.keyframes: List[Keyframe] = sorted(keyframes, key=lambda keyframe: keyframe.time)
+    self.length = self.keyframes[len(self.keyframes) - 1].time - self.keyframes[0].time
+
+  def getValueAtTime(self, time: float) -> float:
+    if self.length != 0 and time / self.length <= self.repeat:
+      # Find the keyframes immediately before and after the current time
+      previousKeyframe: Keyframe = self.keyframes[len(self.keyframes) - 2]
+      nextKeyframe: Keyframe = self.keyframes[len(self.keyframes) - 1]
+      for i, keyframe in enumerate(self.keyframes):
+        if keyframe.time > time % self.length:
+          previousKeyframe = self.keyframes[i - 1]
+          nextKeyframe = keyframe
+          break
+      # Take the weighted average of the two values
+      distance: float = (time - previousKeyframe.time) / (nextKeyframe.time - previousKeyframe.time)
+      return (1 - distance) * previousKeyframe.value + distance * nextKeyframe.value
+    else:
+      # When the animation is not running, it uses the value of the first keyframe
+      return self.keyframes[0].value
+
+  @classmethod
+  def fromValue(cls, value: float):
+    return cls([Keyframe(0, value)])
+
+
+
+class Keyframe(Protocol):
+  def __init__(self, time: float, value: float):
+    self.time = time
+    self.value = value
+
+
 class Image(Protocol):
-  def getColorAtPosition(self, pos: float) -> Color:
+  def getColorAtPositionAndTime(self, pos: float, time: float) -> Color:
     pass
 
 
@@ -26,27 +60,29 @@ class Scene(Image):
     super().__init__()
     self.layers = layers
 
-  def getColorAtPosition(self, pos: float) -> Color:
+  def getColorAtPositionAndTime(self, pos: float, time: float) -> Color:
     # Start with an opaque black background
     result = Color(0.0, 0.0, 0.0)
     # Blend colours layer by layer
     for layer in self.layers:
-      color = layer.getColorAtPosition(pos)
+      color = layer.getColorAtPositionAndTime(pos, time)
       result = result * (1.0 - color.opacity) + color
     return result
 
 
 class Layer(Image):
-  def __init__(self, image: Image, size=1.0, left=0.0, repeat=1.0) -> None:
+  def __init__(self, image: Image, size=Animation.fromValue(1.0), left=Animation.fromValue(0.0), repeat=1.0) -> None:
     super().__init__()
     self.image = image
     self.size = size
     self.left = left
     self.repeat = repeat
 
-  def getColorAtPosition(self, pos: float) -> Color:
-    if (pos - self.left) / self.size <= self.repeat:
-      return self.image.getColorAtPosition(((pos - self.left) % self.size) / self.size)
+  def getColorAtPositionAndTime(self, pos: float, time: float) -> Color:
+    left = self.left.getValueAtTime(time)
+    size = self.size.getValueAtTime(time)
+    if (pos - left) / size <= self.repeat:
+      return self.image.getColorAtPositionAndTime(((pos - left) % size) / size)
     else:
       return Color.transparent()
 
@@ -118,21 +154,21 @@ class Gradient(Image):
       self.colorstops.append(ColorStop(last.color, 1.0))
     self.colorstops.sort(key=lambda colorstop: colorstop.location)
 
-  def getColorAtPosition(self, pos):
+  def getColorAtPositionAndTime(self, pos: float, time: float):
     # Find the colour stops to the left and right of the current position
     leftStop: ColorStop = self.colorstops[len(self.colorstops) - 2]
     rightStop: ColorStop = self.colorstops[len(self.colorstops) - 1]
     for i, colorstop in enumerate(self.colorstops):
-      if colorstop.location > pos:
+      if colorstop.location.getValueAtTime(time) > pos:
         leftStop = self.colorstops[i - 1]
         rightStop = colorstop
         break
     # Blend the two colours
-    distance: float = (pos - leftStop.location) / (rightStop.location - leftStop.location)
+    distance: float = (pos - leftStop.location.getValueAtTime(time)) / (rightStop.location.getValueAtTime(time) - leftStop.location.getValueAtTime(time))
     return (1 - distance) * leftStop.color + distance * rightStop.color
 
 
 class ColorStop(object):
-  def __init__(self, color: Color, location: float):
+  def __init__(self, color: Color, location: Animation):
     self.color = color
     self.location = location
