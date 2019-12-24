@@ -159,16 +159,16 @@ class Gradient(Image):
     leftStop: ColorStop = self.colorstops[len(self.colorstops) - 2]
     rightStop: ColorStop = self.colorstops[len(self.colorstops) - 1]
     for i, colorstop in enumerate(self.colorstops):
-      if colorstop.location.getValueAtTime(time) > pos:
+      if colorstop.location > pos:
         leftStop = self.colorstops[i - 1]
         rightStop = colorstop
         break
     # Blend the two colours
-    distance: float = (pos - leftStop.location.getValueAtTime(time)) / (rightStop.location.getValueAtTime(time) - leftStop.location.getValueAtTime(time))
+    distance: float = (pos - leftStop.location) / (rightStop.location - leftStop.location)
     return (1 - distance) * leftStop.color + distance * rightStop.color
 
 
 class ColorStop(object):
-  def __init__(self, color: Color, location: Animation):
+  def __init__(self, color: Color, location: float):
     self.color = color
     self.location = location
