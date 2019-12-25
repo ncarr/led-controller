@@ -1,4 +1,5 @@
 from math import inf
+from bisect import bisect, insort_left, insort_right
 from typing import List, Protocol, Union, TypeVar
 from rpi_ws281x import Color, PixelStrip, ws
 
@@ -18,21 +19,17 @@ def drawFrame(strip: PixelStrip, scene: Scene, time: float) -> None:
 
 class Animation(Protocol):
   def __init__(self, keyframes: List[Keyframe], repeat = inf) -> None:
-    self.keyframes: List[Keyframe] = sorted(keyframes, key=lambda keyframe: keyframe.time)
+    self.keyframes = keyframes
     self.length = self.keyframes[len(self.keyframes) - 1].time - self.keyframes[0].time
 
   def getValueAtTime(self, time: float) -> float:
     if self.length != 0 and time / self.length <= self.repeat:
       # Find the keyframes immediately before and after the current time
-      previousKeyframe: Keyframe = self.keyframes[len(self.keyframes) - 2]
-      nextKeyframe: Keyframe = self.keyframes[len(self.keyframes) - 1]
-      for i, keyframe in enumerate(self.keyframes):
-        if keyframe.time > time % self.length:
-          previousKeyframe = self.keyframes[i - 1]
-          nextKeyframe = keyframe
-          break
+      i: int = bisect(self.keyframes, Keyframe(time % self.length, 0.0))
+      previousKeyframe: Keyframe = self.keyframes[i - 1]
+      nextKeyframe: Keyframe = self.keyframes[i]
       # Take the weighted average of the two values
-      distance: float = (time - previousKeyframe.time) / (nextKeyframe.time - previousKeyframe.time)
+      distance: float = (time % self.length - previousKeyframe.time) / (nextKeyframe.time - previousKeyframe.time)
       return (1 - distance) * previousKeyframe.value + distance * nextKeyframe.value
     else:
       # When the animation is not running, it uses the value of the first keyframe
@@ -48,6 +45,10 @@ class Keyframe(Protocol):
   def __init__(self, time: float, value: float):
     self.time = time
     self.value = value
+
+  # To make calculations easier, keyframes are compared by time, not by value
+  def __lt__(self, other):
+    return self.time < other.time
 
 
 class Image(Protocol):
@@ -146,23 +147,16 @@ class Gradient(Image):
     super().__init__()
     if len(colorstops) == 0:
       raise ValueError
-    self.colorstops: List[ColorStop] = sorted(colorstops, key=lambda colorstop: colorstop.location)
-    # Colour in the endpoints if not defined
-    if (first := self.colorstops[0]).location > 0.0:
-      self.colorstops.append(ColorStop(first.color, 0.0))
-    if (last := self.colorstops[len(self.colorstops) - 1]).location < 1.0:
-      self.colorstops.append(ColorStop(last.color, 1.0))
-    self.colorstops.sort(key=lambda colorstop: colorstop.location)
+    self.colorstops = colorstops
+    # Colour in the endpoints
+    insort_left(self.colorstops, ColorStop(self.colorstops[0].color, 0.0))
+    insort_right(self.colorstops, ColorStop(self.colorstops[len(self.colorstops) - 1].color, 1.0))
 
   def getColorAtPositionAndTime(self, pos: float, time: float):
     # Find the colour stops to the left and right of the current position
-    leftStop: ColorStop = self.colorstops[len(self.colorstops) - 2]
-    rightStop: ColorStop = self.colorstops[len(self.colorstops) - 1]
-    for i, colorstop in enumerate(self.colorstops):
-      if colorstop.location > pos:
-        leftStop = self.colorstops[i - 1]
-        rightStop = colorstop
-        break
+    i: int = bisect(self.colorstops, ColorStop(Color.transparent(), 0.0))
+    leftStop: ColorStop = self.colorstops[i - 1]
+    rightStop: ColorStop = self.colorstops[i]
     # Blend the two colours
     distance: float = (pos - leftStop.location) / (rightStop.location - leftStop.location)
     return (1 - distance) * leftStop.color + distance * rightStop.color
@@ -172,3 +166,6 @@ class ColorStop(object):
   def __init__(self, color: Color, location: float):
     self.color = color
     self.location = location
+
+  def __lt__(self, other):
+    return self.location < other.location
