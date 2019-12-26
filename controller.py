@@ -16,35 +16,41 @@ def drawFrame(strip: PixelStrip, scene: Scene, time: float) -> None:
     strip.setPixelColor(i, scene.getColorAtPositionAndTime((i + 0.5) / strip.numPixels(), time))
   strip.show()
 
+Animatable = Union[float, Color]
+
+def blend(keyframes: List, position: float, keyframe_class=Keyframe, attr_name: str ='time') -> Animatable:
+  # Find the index of the keyframe after the current position
+  i: int = bisect(keyframes, keyframe_class(None, position))
+  # Find the distance between the current position and the previous keyframe
+  # as a percentage of the position between the two keyframes
+  distance: float = (position - getattr(keyframes[i - 1], attr_name)) / \
+    (getattr(keyframes[i], attr_name) - getattr(keyframes[i - 1], attr_name))
+  # Take the weighted average for the value using the distance as weighting
+  return (1 - distance) * keyframes[i - 1].value + distance * keyframes[i].value
+
 
 class Animation(Protocol):
   def __init__(self, keyframes: List[Keyframe], repeat = inf) -> None:
     self.keyframes = keyframes
+    self.repeat = repeat
     self.length = self.keyframes[len(self.keyframes) - 1].time - self.keyframes[0].time
 
-  def getValueAtTime(self, time: float) -> float:
+  def getValueAtTime(self, time: float) -> Animatable:
     if self.length != 0 and time / self.length <= self.repeat:
-      # Find the keyframes immediately before and after the current time
-      i: int = bisect(self.keyframes, Keyframe(time % self.length, 0.0))
-      previousKeyframe: Keyframe = self.keyframes[i - 1]
-      nextKeyframe: Keyframe = self.keyframes[i]
-      # Take the weighted average of the two values
-      distance: float = (time % self.length - previousKeyframe.time) / (nextKeyframe.time - previousKeyframe.time)
-      return (1 - distance) * previousKeyframe.value + distance * nextKeyframe.value
+      return blend(self.keyframes, time % self.length)
     else:
       # When the animation is not running, it uses the value of the first keyframe
       return self.keyframes[0].value
 
   @classmethod
-  def fromValue(cls, value: float):
+  def fromValue(cls, value: Animatable):
     return cls([Keyframe(0, value)])
 
 
-
 class Keyframe(Protocol):
-  def __init__(self, time: float, value: float):
-    self.time = time
+  def __init__(self, value: Animatable, time: float):
     self.value = value
+    self.time = time
 
   # To make calculations easier, keyframes are compared by time, not by value
   def __lt__(self, other):
@@ -153,13 +159,7 @@ class Gradient(Image):
     insort_right(self.colorstops, ColorStop(self.colorstops[len(self.colorstops) - 1].color, 1.0))
 
   def getColorAtPositionAndTime(self, pos: float, time: float):
-    # Find the colour stops to the left and right of the current position
-    i: int = bisect(self.colorstops, ColorStop(Color.transparent(), 0.0))
-    leftStop: ColorStop = self.colorstops[i - 1]
-    rightStop: ColorStop = self.colorstops[i]
-    # Blend the two colours
-    distance: float = (pos - leftStop.location) / (rightStop.location - leftStop.location)
-    return (1 - distance) * leftStop.color + distance * rightStop.color
+    return blend(self.colorstops, pos, ColorStop, 'location')
 
 
 class ColorStop(object):
