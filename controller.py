@@ -46,6 +46,36 @@ class Animation(Protocol):
   def fromValue(cls, value: Animatable):
     return cls([Keyframe(0, value)])
 
+  def __mul__(self, scale):
+    return ScaledAnimation(self, scale)
+
+  def __rmul__(self, scale):
+    return self.__class__.__mul__(scale, self)
+
+  def __add__(self, other):
+    return AnimationSum(self, other)
+
+  def __radd__(self, other):
+    return self.__class__.__add__(other, self)
+
+
+class ScaledAnimation(object):
+  def __init__(self, value, scale):
+    self.value = value
+    self.scale = scale
+
+  def getValueAtTime(self, time):
+    return self.value.getValueAtTime(time) * self.scale
+
+
+class AnimationSum(object):
+  def __init__(self, value, other):
+    self.value = value
+    self.other = other
+
+  def getValueAtTime(self, time):
+    return self.value.getValueAtTime(time) + self.other.getValueAtTime(time)
+
 
 class Keyframe(Protocol):
   def __init__(self, value: Animatable, time: float):
@@ -117,8 +147,8 @@ class Color(Image):
 
   # Implement basic arithmentic operations
   def __mul__(self, scale: Union[float, int]) -> Color:
-    if not isinstance(scale, float, int):
-      raise TypeError
+    if not ((isinstance(scale, float, int) and isinstance(self, Color)) or (isinstance(self, float, int) and isinstance(scale, Color))):
+      raise NotImplementedError
     result = Color.transparent()
     result.red = self.red * scale
     result.green = self.green * scale
@@ -127,9 +157,12 @@ class Color(Image):
     result.opacity = self.opacity * scale
     return result
 
+  def __rmul__(self, scale):
+    return self.__class__.__mul__(scale, self)
+
   def __add__(self, other: Color) -> Color:
     if not isinstance(other, Color):
-      raise TypeError
+      raise NotImplementedError
     result = Color.transparent()
     result.red = self.red + other.red
     result.green = self.green + other.green
@@ -138,8 +171,14 @@ class Color(Image):
     result.opacity = self.opacity + other.opacity
     return result
 
+  def __radd__(self, other):
+    return self.__class__.__add__(other, self)
+
   # Implement image rendering
-  def getColorAtPosition(self, pos: float) -> Color:
+  def getColorAtPositionAndTime(self, pos: float, time: float) -> Color:
+    return self.getValueAtTime(time)
+
+  def getValueAtTime(self, time: float):
     return self
 
   # Returns a new instance of transparent black
@@ -147,6 +186,10 @@ class Color(Image):
   def transparent(cls):
     return cls(0.0, 0.0, 0.0, 0.0, 0.0)
 
+
+class AnimatedColor(Animation, Color):
+  # Yup, that's all the code we need to animate colours
+  pass
 
 class Gradient(Image):
   def __init__(self, colorstops: List[ColorStop]):
@@ -159,7 +202,7 @@ class Gradient(Image):
     insort_right(self.colorstops, ColorStop(self.colorstops[len(self.colorstops) - 1].color, 1.0))
 
   def getColorAtPositionAndTime(self, pos: float, time: float):
-    return blend(self.colorstops, pos, ColorStop, 'location')
+    return blend(self.colorstops, pos, ColorStop, 'location').getValueAtTime(time)
 
 
 class ColorStop(object):
