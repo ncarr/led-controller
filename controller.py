@@ -1,6 +1,7 @@
 from math import inf
 from bisect import bisect, insort_left, insort_right
 from typing import List, Protocol, Union, TypeVar
+from time import monotonic
 from rpi_ws281x import Color, PixelStrip, ws
 
 # Defaults for testing. TODO delete
@@ -30,14 +31,18 @@ def blend(keyframes: List, position: float, keyframe_class=Keyframe, attr_name: 
 
 
 class Animation(Protocol):
-  def __init__(self, keyframes: List[Keyframe], repeat = inf) -> None:
+  def __init__(self, keyframes: List[Keyframe]) -> None:
     self.keyframes = keyframes
+    self.repeat = 0.0
+
+  def start(self, repeat: float = inf):
     self.repeat = repeat
     self.length = self.keyframes[len(self.keyframes) - 1].time - self.keyframes[0].time
+    self.epoch = monotonic()
 
   def getValueAtTime(self, time: float) -> Animatable:
-    if self.length != 0 and time / self.length <= self.repeat:
-      return blend(self.keyframes, time % self.length)
+    if self.length != 0 and (time - self.epoch) / self.length <= self.repeat:
+      return blend(self.keyframes, (time - self.epoch) % self.length)
     else:
       # When the animation is not running, it uses the value of the first keyframe
       return self.keyframes[0].value
