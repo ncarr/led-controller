@@ -1,25 +1,12 @@
 from math import inf
 from bisect import bisect, insort_left, insort_right
+from dataclasses import dataclass, field
 from typing import List, Protocol, Union, TypeVar
 from time import monotonic
-from rpi_ws281x import Color, PixelStrip, ws
-
-# Defaults for testing. TODO delete
-LED_COUNT = 150
-GPIO_PIN = 21
-LED_STRIP = ws.SK6812W_STRIP
-
-strip = PixelStrip(LED_COUNT, GPIO_PIN, strip_type=LED_STRIP)
-scene = Scene([Layer(Color(0, 255, 0, 255))])
-
-def drawFrame(strip: PixelStrip, scene: Scene, time: float) -> None:
-  for i in range(strip.numPixels()):
-    strip.setPixelColor(i, scene.getColorAtPositionAndTime((i + 0.5) / strip.numPixels(), time))
-  strip.show()
 
 Animatable = Union[float, Color]
 
-def blend(keyframes: List, position: float, keyframe_class=Keyframe, attr_name: str ='time') -> Animatable:
+def blend(keyframes: List, position: float, keyframe_class=Keyframe, attr_name: str='time') -> Animatable:
   # Find the index of the keyframe after the current position
   i: int = bisect(keyframes, keyframe_class(None, position))
   # Find the distance between the current position and the previous keyframe
@@ -30,19 +17,19 @@ def blend(keyframes: List, position: float, keyframe_class=Keyframe, attr_name: 
   return (1 - distance) * keyframes[i - 1].value + distance * keyframes[i].value
 
 
+@dataclass
 class Animation(Protocol):
-  def __init__(self, keyframes: List[Keyframe]) -> None:
-    self.keyframes = keyframes
-    self.repeat = 0.0
+  keyframes: List[Keyframe]
+  repeat: float = field(init=False, default=0.0)
 
-  def start(self, repeat: float = inf):
+  def start(self, repeat: float = inf) -> None:
     self.repeat = repeat
     self.length = self.keyframes[len(self.keyframes) - 1].time - self.keyframes[0].time
     self.epoch = monotonic()
 
   def getValueAtTime(self, time: float) -> Animatable:
     if self.length != 0 and (time - self.epoch) / self.length <= self.repeat:
-      return blend(self.keyframes, (time - self.epoch) % self.length)
+      return blend(self.keyframes, position=(time - self.epoch) % self.length)
     else:
       # When the animation is not running, it uses the value of the first keyframe
       return self.keyframes[0].value
@@ -64,32 +51,29 @@ class Animation(Protocol):
     return self.__class__.__add__(other, self)
 
 
+@dataclass
 class ScaledAnimation(object):
-  def __init__(self, value, scale):
-    self.value = value
-    self.scale = scale
+  value: Union[Animation, float, int]
+  scale: Union[Animation, float, int]
 
-  def getValueAtTime(self, time):
+  def getValueAtTime(self, time: float) -> Animatable:
     return self.value.getValueAtTime(time) * self.scale
 
 
+@dataclass
 class AnimationSum(object):
-  def __init__(self, value, other):
-    self.value = value
-    self.other = other
+  value: Animation
+  other: Animation
 
-  def getValueAtTime(self, time):
+  def getValueAtTime(self, time: float) -> Animatable:
     return self.value.getValueAtTime(time) + self.other.getValueAtTime(time)
 
 
+@dataclass(order=True)
 class Keyframe(Protocol):
-  def __init__(self, value: Animatable, time: float):
-    self.value = value
-    self.time = time
-
   # To make calculations easier, keyframes are compared by time, not by value
-  def __lt__(self, other):
-    return self.time < other.time
+  value: Animatable = field(compare=False)
+  time: float
 
 
 class Image(Protocol):
@@ -97,10 +81,9 @@ class Image(Protocol):
     pass
 
 
+@dataclass
 class Scene(Image):
-  def __init__(self, layers: List[Layer]) -> None:
-    super().__init__()
-    self.layers = layers
+  layers: List[Layer]
 
   def getColorAtPositionAndTime(self, pos: float, time: float) -> Color:
     # Start with an opaque black background
@@ -112,24 +95,30 @@ class Scene(Image):
     return result
 
 
+@dataclass
 class Layer(Image):
-  def __init__(self, image: Image, size=Animation.fromValue(1.0), left=Animation.fromValue(0.0), repeat=1.0) -> None:
-    super().__init__()
-    self.image = image
-    self.size = size
-    self.left = left
-    self.repeat = repeat
+  image: Image
+  size: Animation = field(default_factory=lambda: Animation.fromValue(1.0))
+  left: Animation = field(default_factory=lambda: Animation.fromValue(0.0))
+  repeat: float = 1.0
 
   def getColorAtPositionAndTime(self, pos: float, time: float) -> Color:
     left = self.left.getValueAtTime(time)
     size = self.size.getValueAtTime(time)
     if (pos - left) / size <= self.repeat:
-      return self.image.getColorAtPositionAndTime(((pos - left) % size) / size)
+      return self.image.getColorAtPositionAndTime(((pos - left) % size) / size, time)
     else:
       return Color.transparent()
 
 
+@dataclass
 class Color(Image):
+  red: float
+  green: float
+  blue: float
+  white: float = 0.0
+  opacity: float = 1.0
+
   def __init__(self, red: float, green: float, blue: float, white=0.0, opacity=1.0) -> None:
     super().__init__()
     # Premultiply the colours for easier processing
@@ -189,14 +178,18 @@ class Color(Image):
   # Returns a new instance of transparent black
   @classmethod
   def transparent(cls):
-    return cls(0.0, 0.0, 0.0, 0.0, 0.0)
+    return cls(red=0.0, green=0.0, blue=0.0, white=0.0, opacity=0.0)
 
 
 class AnimatedColor(Animation, Color):
   # Yup, that's all the code we need to animate colours
   pass
 
+
+@dataclass
 class Gradient(Image):
+  colorstops: List[ColorStop]
+
   def __init__(self, colorstops: List[ColorStop]):
     super().__init__()
     if len(colorstops) == 0:
@@ -207,13 +200,11 @@ class Gradient(Image):
     insort_right(self.colorstops, ColorStop(self.colorstops[len(self.colorstops) - 1].color, 1.0))
 
   def getColorAtPositionAndTime(self, pos: float, time: float):
-    return blend(self.colorstops, pos, ColorStop, 'location').getValueAtTime(time)
+    return blend(self.colorstops, pos, keyframe_class=ColorStop, attr_name='location').getValueAtTime(time)
 
 
+@dataclass(order=True)
 class ColorStop(object):
-  def __init__(self, color: Color, location: float):
-    self.color = color
-    self.location = location
-
-  def __lt__(self, other):
-    return self.location < other.location
+  # To make calculations easier, colour stops are compared by location, not by colour
+  color: Color = field(compare=False)
+  location: float
