@@ -4,7 +4,7 @@ from controller import Scene, Animation, Keyframe, Image, AnimatedColor, Color, 
 
 engine = create_engine('sqlite:///:memory:')
 
-metadata = MetaData(bind=engine)
+metadata = MetaData()
 
 # Since we already have data classes defined, we use classical mapping
 
@@ -53,8 +53,18 @@ mapper(Keyframe, keyframe)
 # Images use single table inheritance
 
 image = Table('image', metadata,
+              # Common
               Column('id', Integer, primary_key=True),
-              Column('type', String)
+              Column('type', String),
+              # Animated colour
+              Column('repeat', Float),
+              # Colour
+              Column('red', Float),
+              Column('green', Float),
+              Column('blue', Float),
+              Column('white', Float),
+              Column('opacity', Float)
+              # Gradient has no columns
               )
 mapper(Image, image,
        polymorphic_on=image.c.type,
@@ -80,38 +90,26 @@ mapper(ColorKeyframe, colorkeyframe,
        }
        )
 
-animated_color = Table(metadata,
-                       Column('id', Integer, ForeignKey(
-                           'color.id'), primary_key=True),
-                       Column('repeat', Float)
-                       )
-mapper(AnimatedColor, animated_color,
+mapper(Color,
+       inherits=Image,
+       polymorphic_identity='color',
+       include_properties=['id', 'type', 'red',
+                           'green', 'blue', 'white', 'opacity']
+       )
+
+mapper(AnimatedColor,
+       inherits=Color,
        polymorphic_identity='animated_color',
+       include_properties=['id', 'type', 'repeat'],
        properties={
            'keyframes': relationship(ColorKeyframe)
        }
        )
 
-color = Table(metadata,
-              Column('id', Integer, ForeignKey('image.id'), primary_key=True),
-              Column('red', Float),
-              Column('green', Float),
-              Column('blue', Float),
-              Column('white', Float),
-              Column('opacity', Float)
-              )
-mapper(Color, color,
-       polymorphic_identity='color'
-       )
-
-gradient = Table(metadata,
-                 Column('id', Integer, ForeignKey(
-                     'image.id'), primary_key=True)
-                 )
-mapper(Gradient, gradient,
-       polymorphic_identity='gradient'
-       )
-mapper(Gradient, gradient,
+mapper(Gradient,
+       inherits=Image,
+       polymorphic_identity='gradient',
+       include_properties=['id', 'type'],
        properties={
            'colorstops': relationship(ColorStop)
        }
@@ -124,10 +122,10 @@ colorstop = Table('colorstop', metadata,
                   Column('location', Float)
                   )
 mapper(ColorStop, colorstop,
-properties={
-  'color': relationship(Color)
-}
-)
+       properties={
+           'color': relationship(Color)
+       }
+       )
 
 layer = Table('layer', metadata,
               Column('id', Integer, primary_key=True),

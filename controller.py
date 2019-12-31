@@ -2,14 +2,14 @@ from __future__ import annotations
 from math import inf
 from bisect import bisect, insort_left, insort_right
 from dataclasses import dataclass, field
-from typing import List, Protocol, Union, TypeVar
+from typing import List, Union, TypeVar
 from time import monotonic
 
 Animatable = Union[float, 'Color']
 
 
 @dataclass(order=True)
-class Keyframe(object):
+class Keyframe:
   # To make calculations easier, keyframes are compared by time, not by value
   value: Animatable = field(compare=False)
   time: float
@@ -26,7 +26,7 @@ def blend(keyframes: List, position: float, keyframe_class=Keyframe, attr_name: 
   return (1 - distance) * keyframes[i - 1].value + distance * keyframes[i].value
 
 
-class RightMathMixin(object):
+class RightMathMixin:
   def __rmul__(self, other):
     return self.__mul__(other)
   
@@ -87,7 +87,7 @@ class Animation(AnimationMathMixin):
     return animation
 
 
-class Image(Protocol):
+class Image:
   def getColorAtPositionAndTime(self, pos: float, time: float) -> Color:
     pass
 
@@ -179,7 +179,7 @@ class Gradient(Image):
 
 
 @dataclass(order=True)
-class ColorStop(object):
+class ColorStop:
   # To make calculations easier, colour stops are compared by location, not by colour
   value: Color = field(compare=False)
   location: float
