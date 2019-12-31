@@ -1,17 +1,19 @@
 from sqlalchemy import create_engine, Column, Integer, Float, String, ForeignKey, MetaData, Table
 from sqlalchemy.orm import relationship, mapper
-from controller import Scene, Animation, Keyframe, Image, AnimatedColor, Color, Gradient
+from controller import Scene, Animation, Keyframe, Image, AnimatedColor, Color, Gradient, Layer, ColorStop
 
 engine = create_engine('sqlite:///:memory:')
 
 metadata = MetaData(bind=engine)
+
+# Since we already have data classes defined, we use classical mapping
 
 scene = Table('scene', metadata,
               Column('id', Integer, primary_key=True),
               Column('name', String)
               )
 mapper(Scene, scene, properties={
-  'layers': relationship(Layer)
+    'layers': relationship(Layer)
 })
 
 device = Table('device', metadata,
@@ -37,7 +39,7 @@ animation = Table('animation', metadata,
                   Column('repeat', Float)
                   )
 mapper(Animation, animation, properties={
-  'keyframes': relationship()
+    'keyframes': relationship(Keyframe)
 })
 
 keyframe = Table('keyframe', metadata,
@@ -48,29 +50,21 @@ keyframe = Table('keyframe', metadata,
                  )
 mapper(Keyframe, keyframe)
 
+# Images use single table inheritance
+
 image = Table('image', metadata,
-              Column('id', Integer, primary_key=True)
-              )
-mapper(Image, image)
-
-animatedcolor = Table('animatedcolor', metadata,
-                      Column('id', Integer, primary_key=True),
-                      Column('repeat', Float)
-                      )
-mapper(AnimatedColor, animatedcolor)
-
-color = Table('color', metadata,
               Column('id', Integer, primary_key=True),
-              Column('red', Float),
-              Column('green', Float),
-              Column('blue', Float),
-              Column('white', Float),
-              Column('opacity', Float)
+              Column('type', String)
               )
-mapper(Color, color)
+mapper(Image, image,
+       polymorphic_on=image.c.type,
+       polymorphic_identity='image'
+       )
 
 colorkeyframe = Table('colorkeyframe', metadata,
                       Column('id', Integer, primary_key=True),
+                      Column('animation_id', Integer,
+                             ForeignKey('animated_color.id')),
                       Column('color_id', Integer, ForeignKey('color.id')),
                       Column('time', Float)
                       )
@@ -80,18 +74,60 @@ class ColorKeyframe(Keyframe):
     pass
 
 
-mapper(ColorKeyframe, colorkeyframe)
+mapper(ColorKeyframe, colorkeyframe,
+       properties={
+           'value': relationship(Color)
+       }
+       )
 
-gradient = Table('gradient', metadata,
-                 Column('id', Integer, primary_key=True)
+animated_color = Table(metadata,
+                       Column('id', Integer, ForeignKey(
+                           'color.id'), primary_key=True),
+                       Column('repeat', Float)
+                       )
+mapper(AnimatedColor, animated_color,
+       polymorphic_identity='animated_color',
+       properties={
+           'keyframes': relationship(ColorKeyframe)
+       }
+       )
+
+color = Table(metadata,
+              Column('id', Integer, ForeignKey('image.id'), primary_key=True),
+              Column('red', Float),
+              Column('green', Float),
+              Column('blue', Float),
+              Column('white', Float),
+              Column('opacity', Float)
+              )
+mapper(Color, color,
+       polymorphic_identity='color'
+       )
+
+gradient = Table(metadata,
+                 Column('id', Integer, ForeignKey(
+                     'image.id'), primary_key=True)
                  )
-mapper(Gradient, gradient)
+mapper(Gradient, gradient,
+       polymorphic_identity='gradient'
+       )
+mapper(Gradient, gradient,
+       properties={
+           'colorstops': relationship(ColorStop)
+       }
+       )
 
 colorstop = Table('colorstop', metadata,
                   Column('id', Integer, primary_key=True),
+                  Column('gradient_id', Integer, ForeignKey('gradient.id')),
                   Column('color_id', Integer, ForeignKey('color.id')),
                   Column('location', Float)
                   )
+mapper(ColorStop, colorstop,
+properties={
+  'color': relationship(Color)
+}
+)
 
 layer = Table('layer', metadata,
               Column('id', Integer, primary_key=True),
@@ -100,3 +136,10 @@ layer = Table('layer', metadata,
               Column('repeat', Float),
               Column('image_id', Integer, ForeignKey('image.id'))
               )
+mapper(Layer, layer,
+       properties={
+           'size': relationship(Animation, foreign_keys=[layer.c.size_id]),
+           'left': relationship(Animation, foreign_keys=[layer.c.left_id]),
+           'image': relationship(Image)
+       }
+       )
