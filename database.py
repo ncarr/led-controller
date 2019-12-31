@@ -6,12 +6,21 @@ engine = create_engine('sqlite:///:memory:')
 
 metadata = MetaData(bind=engine)
 
+scene = Table('scene', metadata,
+              Column('id', Integer, primary_key=True),
+              Column('name', String)
+              )
+mapper(Scene, scene, properties={
+  'layers': relationship(Layer)
+})
+
 device = Table('device', metadata,
                Column('id', Integer, primary_key=True),
                Column('led_count', Integer),
                Column('gpio_pin', Integer),
                Column('led_strip', Integer),
-               Column('name', String)
+               Column('name', String),
+               Column('scene_id', Integer, ForeignKey('scene.id'))
                )
 
 
@@ -19,22 +28,21 @@ class Device:
     pass
 
 
-mapper(Device, device)
-
-scene = Table('scene', metadata,
-              Column('id', Integer, primary_key=True),
-              Column('name', String)
-              )
-mapper(Scene, scene)
+mapper(Device, device, properties={
+    'scene': relationship(Scene)
+})
 
 animation = Table('animation', metadata,
                   Column('id', Integer, primary_key=True),
                   Column('repeat', Float)
                   )
-mapper(Animation, animation)
+mapper(Animation, animation, properties={
+  'keyframes': relationship()
+})
 
 keyframe = Table('keyframe', metadata,
                  Column('id', Integer, primary_key=True),
+                 Column('animation_id', Integer, ForeignKey('animation.id')),
                  Column('value', Float),
                  Column('time', Float)
                  )
@@ -63,7 +71,7 @@ mapper(Color, color)
 
 colorkeyframe = Table('colorkeyframe', metadata,
                       Column('id', Integer, primary_key=True),
-                      Column('color_id', Integer, ForeignKey(Color.id)),
+                      Column('color_id', Integer, ForeignKey('color.id')),
                       Column('time', Float)
                       )
 
@@ -81,14 +89,14 @@ mapper(Gradient, gradient)
 
 colorstop = Table('colorstop', metadata,
                   Column('id', Integer, primary_key=True),
-                  Column('color_id', Integer, ForeignKey(Color.id)),
+                  Column('color_id', Integer, ForeignKey('color.id')),
                   Column('location', Float)
                   )
 
 layer = Table('layer', metadata,
               Column('id', Integer, primary_key=True),
-              Column('size_id', Integer, ForeignKey(Animation.id)),
-              Column('left_id', Integer, ForeignKey(Animation.id)),
+              Column('size_id', Integer, ForeignKey('animation.id')),
+              Column('left_id', Integer, ForeignKey('animation.id')),
               Column('repeat', Float),
-              Column('image_id', Integer, ForeignKey(Image.id))
+              Column('image_id', Integer, ForeignKey('image.id'))
               )
