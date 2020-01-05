@@ -4,6 +4,8 @@ from bisect import bisect, insort_left, insort_right
 from dataclasses import dataclass, field
 from typing import List, Union, TypeVar
 from time import monotonic
+from sqlalchemy import create_engine, Column, Integer, Float, String, ForeignKey, MetaData, Table
+from sqlalchemy.orm import relationship, mapper, sessionmaker
 
 Animatable = Union[float, 'Color']
 
@@ -25,6 +27,11 @@ def blend(keyframes: List, position: float, keyframe_class=Keyframe, attr_name: 
   # Take the weighted average for the value using the distance as weighting
   return (1 - distance) * keyframes[i - 1].value + distance * keyframes[i].value
 
+
+class DimensionKeyframe(Keyframe, Base):
+  animation_id = Column(Integer, ForeignKey('dimensionanimation.id'))
+  value = Column(Float)
+  time = Column(Float)
 
 class RightMathMixin:
   def __rmul__(self, other):
@@ -87,18 +94,32 @@ class Animation(AnimationMathMixin):
     return animation
 
 
-class Image:
+class DimensionAnimation(Animation, Base):
+  repeat = Column(Float)
+  keyframes = relationship(DimensionKeyframe)
+
+
+class Image(Base):
+  identity = Column(String)
+
+  __mapper_args__ = {
+    'polymorphic_identity': 'image',
+    'polymorphic_on': 'identity'
+  }
+
   def getColorAtPositionAndTime(self, pos: float, time: float) -> Color:
     pass
 
 
-@dataclass
-class Color(Image, RightMathMixin):
-  red: float
-  green: float
-  blue: float
-  white: float = 0.0
-  opacity: float = 1.0
+
+class Color(Image, RightMathMixin, Base):
+  __tablename__ = None
+
+  red = Column(Float)
+  green = Column(Float)
+  blue = Column(Float)
+  white = Column(Float)
+  opacity = Column(Float)
 
   def __init__(self, red: float, green: float, blue: float, white=0.0, opacity=1.0) -> None:
     super().__init__()
@@ -185,9 +206,9 @@ class ColorStop:
   location: float
 
 
-@dataclass
-class Scene(Image):
-  layers: List[Layer]
+class Scene(Base):
+  name = Column(String)
+  layers = relationship(Layer)
 
   def getColorAtPositionAndTime(self, pos: float, time: float) -> Color:
     # Start with an opaque black background
@@ -199,8 +220,7 @@ class Scene(Image):
     return result
 
 
-@dataclass
-class Layer(Image):
+class Layer(Base):
   image: Image
   size: Animation = field(default_factory=lambda: Animation.fromValue(1.0))
   left: Animation = field(default_factory=lambda: Animation.fromValue(0.0))
@@ -213,3 +233,12 @@ class Layer(Image):
       return self.image.getColorAtPositionAndTime(((pos - left) % size) / size, time)
     else:
       return Color.transparent()
+
+
+class Device(Base):
+  led_count = Column(Integer)
+  gpio_pin = Column(Integer)
+  led_strip = Column(Integer)
+  name = Column(String)
+  scene_id = Column(Integer, ForeignKey('scene.id'))
+  scene = relationship(Scene)
