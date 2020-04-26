@@ -2,28 +2,32 @@ from __future__ import annotations
 from math import inf
 from bisect import bisect, insort_left, insort_right
 from dataclasses import dataclass, field
-from typing import List, Union, TypeVar
+from typing import List, Union, TypeVar, Any
 from time import monotonic
 from sqlalchemy import create_engine, Column, Integer, Float, String, ForeignKey, MetaData, Table
 from sqlalchemy.orm import relationship, mapper, sessionmaker
+from sqlalchemy.ext.declarative import declarative_base
 
-Animatable = Union[float, 'Color']
+Base = declarative_base()
 
-
+"""
+Generic base class for anything that acts as a stop on a continuous spectrum
+(i.e. keyframes, colorstops)
+"""
 @dataclass(order=True)
 class Keyframe:
-  # To make calculations easier, keyframes are compared by time, not by value
-  value: Animatable = field(compare=False)
-  time: float
+  # To make calculations easier, keyframes are compared by position, not by value
+  value: Any = field(compare=False)
+  position: float
 
 
-def blend(keyframes: List, position: float, keyframe_class=Keyframe, attr_name: str = 'time') -> Animatable:
+def blend(keyframes: List[Keyframe], position: float) -> Any:
   # Find the index of the keyframe after the current position
-  i: int = bisect(keyframes, keyframe_class(None, position))
+  i: int = bisect(keyframes, Keyframe(None, position))
   # Find the distance between the current position and the previous keyframe
   # as a percentage of the position between the two keyframes
-  distance: float = (position - getattr(keyframes[i - 1], attr_name)) / \
-      (getattr(keyframes[i], attr_name) - getattr(keyframes[i - 1], attr_name))
+  distance: float = (position - keyframes[i - 1].position) / \
+      (keyframes[i].position - keyframes[i - 1].position)
   # Take the weighted average for the value using the distance as weighting
   return (1 - distance) * keyframes[i - 1].value + distance * keyframes[i].value
 
@@ -31,7 +35,7 @@ def blend(keyframes: List, position: float, keyframe_class=Keyframe, attr_name: 
 class DimensionKeyframe(Keyframe, Base):
   animation_id = Column(Integer, ForeignKey('dimensionanimation.id'))
   value = Column(Float)
-  time = Column(Float)
+  position = Column(Float)
 
 class RightMathMixin:
   def __rmul__(self, other):
@@ -54,7 +58,7 @@ class ScaledAnimation(AnimationMathMixin):
   value: Union[Animation, float, int]
   scale: Union[Animation, float, int]
 
-  def getValueAtTime(self, time: float) -> Animatable:
+  def getValueAtTime(self, time: float) -> Any:
     return self.value.getValueAtTime(time) * self.scale
 
 
@@ -63,7 +67,7 @@ class AnimationSum(AnimationMathMixin):
   value: Animation
   other: Animation
 
-  def getValueAtTime(self, time: float) -> Animatable:
+  def getValueAtTime(self, time: float) -> Any:
     return self.value.getValueAtTime(time) + self.other.getValueAtTime(time)
 
 
@@ -71,16 +75,17 @@ class AnimationSum(AnimationMathMixin):
 class Animation(AnimationMathMixin):
   keyframes: List[Keyframe]
   repeat: float = field(init=False, default=0.0)
+  reference: float = field(init=False, default=0.0)
 
   def start(self, repeat: float = inf) -> None:
     self.repeat = repeat
-    self.length = self.keyframes[len(self.keyframes) - 1].time - self.keyframes[0].time
-    self.epoch = monotonic()
+    self.length = self.keyframes[len(self.keyframes) - 1].position - self.keyframes[0].position
+    self.reference = monotonic()
 
-  def getValueAtTime(self, time: float) -> Animatable:
+  def getValueAtTime(self, time: float) -> Any:
     try:
-      if self.length != 0 and (time - self.epoch) / self.length <= self.repeat:
-        return blend(self.keyframes, position=(time - self.epoch) % self.length)
+      if self.length != 0 and (time - self.reference) / self.length <= self.repeat:
+        return blend(self.keyframes, position=(time - self.reference) % self.length)
       else:
         # When the animation is not running, it uses the value of the first keyframe
         return self.keyframes[0].value
@@ -88,8 +93,8 @@ class Animation(AnimationMathMixin):
       raise AttributeError('Animation not started')
 
   @classmethod
-  def fromValue(cls, value: Animatable):
-    animation = cls([Keyframe(value, time=0.0)])
+  def fromValue(cls, value: Any):
+    animation = cls([Keyframe(value, position=0.0)])
     animation.start()
     return animation
 
@@ -112,8 +117,12 @@ class Image(Base):
 
 
 
-class Color(Image, RightMathMixin, Base):
+class Color(Image, RightMathMixin):
   __tablename__ = None
+
+  __mapper_args__ = {
+      'polymorphic_identity': 'color'
+  }
 
   red = Column(Float)
   green = Column(Float)
@@ -177,14 +186,43 @@ class Color(Image, RightMathMixin, Base):
     return cls(red=0.0, green=0.0, blue=0.0, white=0.0, opacity=0.0)
 
 
-class AnimatedColor(Animation, Color):
-  # Yup, that's all the code we need to animate colours
-  pass
+class ColorKeyframe(Keyframe, Base):
+  animation_id = Column(Integer, ForeignKey('image.id'))
+  color_id = Column(Integer, ForeignKey('image.id'))
+  value = relationship(Color, foreign_keys=color_id)
+  position = Column(Float)
 
 
-@dataclass
+class ColorAnimation(Animation, Image):
+  __tablename__ = None
+
+  __mapper_args__ = {
+      'polymorphic_identity': 'coloranimation'
+  }
+
+  repeat = Column(Float)
+  keyframes = relationship(ColorKeyframe, foreign_keys=ColorKeyframe.animation_id)
+
+  # Implement image rendering
+  def getColorAtPositionAndTime(self, pos: float, time: float) -> Color:
+    return self.getValueAtTime(time)
+
+
+class ColorStop(Keyframe, Base):
+  gradient_id = Column(Integer, ForeignKey('image.id'))
+  color_id = Column(Integer, ForeignKey('image.id'))
+  value = relationship(Color, foreign_keys=color_id)
+  position = Column(Float)
+
+
 class Gradient(Image):
-  colorstops: List[ColorStop]
+  __tablename__ = None
+
+  __mapper_args__ = {
+      'polymorphic_identity': 'gradient'
+  }
+
+  colorstops = relationship(ColorStop, foreign_keys=ColorStop.gradient_id)
 
   def __init__(self, colorstops: List[ColorStop]):
     super().__init__()
@@ -196,14 +234,26 @@ class Gradient(Image):
     insort_right(self.colorstops, ColorStop(self.colorstops[len(self.colorstops) - 1].value, 1.0))
 
   def getColorAtPositionAndTime(self, pos: float, time: float):
-    return blend(self.colorstops, pos, keyframe_class=ColorStop, attr_name='location').getValueAtTime(time)
+    return blend(self.colorstops, pos).getValueAtTime(time)
 
 
-@dataclass(order=True)
-class ColorStop:
-  # To make calculations easier, colour stops are compared by location, not by colour
-  value: Color = field(compare=False)
-  location: float
+class Layer(Base):
+  scene_id = Column(Integer, ForeignKey('scene.id'))
+  image_id = Column(Integer, ForeignKey('image.id'))
+  image = relationship(Image)
+  size_id = Column(Integer, ForeignKey('dimensionanimation.id'))
+  size = relationship(DimensionAnimation, foreign_keys=size_id)
+  left_id = Column(Integer, ForeignKey('dimensionanimation.id'))
+  left = relationship(DimensionAnimation, foreign_keys=left_id)
+  repeat = Column(Float)
+
+  def getColorAtPositionAndTime(self, pos: float, time: float) -> Color:
+    left = self.left.getValueAtTime(time)
+    size = self.size.getValueAtTime(time)
+    if (pos - left) / size <= self.repeat:
+      return self.image.getColorAtPositionAndTime(((pos - left) % size) / size, time)
+    else:
+      return Color.transparent()
 
 
 class Scene(Base):
@@ -220,21 +270,6 @@ class Scene(Base):
     return result
 
 
-class Layer(Base):
-  image: Image
-  size: Animation = field(default_factory=lambda: Animation.fromValue(1.0))
-  left: Animation = field(default_factory=lambda: Animation.fromValue(0.0))
-  repeat: float = 1.0
-
-  def getColorAtPositionAndTime(self, pos: float, time: float) -> Color:
-    left = self.left.getValueAtTime(time)
-    size = self.size.getValueAtTime(time)
-    if (pos - left) / size <= self.repeat:
-      return self.image.getColorAtPositionAndTime(((pos - left) % size) / size, time)
-    else:
-      return Color.transparent()
-
-
 class Device(Base):
   led_count = Column(Integer)
   gpio_pin = Column(Integer)
@@ -242,3 +277,5 @@ class Device(Base):
   name = Column(String)
   scene_id = Column(Integer, ForeignKey('scene.id'))
   scene = relationship(Scene)
+
+# TODO: id, tablename
