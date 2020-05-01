@@ -3,12 +3,23 @@ from math import inf
 from bisect import bisect, insort_left, insort_right
 from dataclasses import dataclass, field
 from typing import List, Union, TypeVar, Any
-from time import monotonic
+from time import time
+from functools import total_ordering
 from sqlalchemy import create_engine, Column, Integer, Float, String, ForeignKey, MetaData, Table
 from sqlalchemy.orm import relationship, mapper, sessionmaker
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.ext.declarative import declarative_base, declared_attr
 
-Base = declarative_base()
+class Base(object):
+  @classmethod
+  @declared_attr
+  def __tablename__(cls):
+    return cls.__name__.lower()
+
+  id = Column(Integer, primary_key=True)
+
+
+Base = declarative_base(cls=Base)
+
 
 """
 Generic base class for anything that acts as a stop on a continuous spectrum
@@ -22,6 +33,10 @@ class Keyframe:
 
 
 def blend(keyframes: List[Keyframe], position: float) -> Any:
+  if position < keyframes[0].position:
+    return keyframes[0].value
+  if position >= keyframes[-1].position:
+    return keyframes[-1].value
   # Find the index of the keyframe after the current position
   i: int = bisect(keyframes, Keyframe(None, position))
   # Find the distance between the current position and the previous keyframe
@@ -33,91 +48,141 @@ def blend(keyframes: List[Keyframe], position: float) -> Any:
 
 
 class DimensionKeyframe(Keyframe, Base):
-  animation_id = Column(Integer, ForeignKey('dimensionanimation.id'))
+  animation_id = Column(Integer, ForeignKey('dimension.id'))
   value = Column(Float)
   position = Column(Float)
 
-class RightMathMixin:
+
+@total_ordering
+class MathProxyMixin:
+  def __mul__(self, other):
+    return self.currentValue() * other
+
   def __rmul__(self, other):
-    return self.__mul__(other)
-  
-  def __radd__(self, other):
-    return self.__add__(other)
+    return other * self.currentValue()
 
+  def __truediv__(self, other):
+    return self.currentValue() / other
 
-class AnimationMathMixin(RightMathMixin):
-  def __mul__(self, scale):
-    return ScaledAnimation(self, scale)
+  def __rtruediv__(self, other):
+    return other / self.currentValue()
+
+  def __mod__(self, other):
+    return self.currentValue() % other
+
+  def __rmod__(self, other):
+    return other % self.currentValue()
 
   def __add__(self, other):
-    return AnimationSum(self, other)
+    return self.currentValue() + other
+
+  def __radd__(self, other):
+    return other + self.currentValue()
+
+  def __sub__(self, other):
+    return self.currentValue() - other
+
+  def __rsub__(self, other):
+    return other - self.currentValue()
+
+  def __lt__(self, other):
+    return self.currentValue() < other
+
+  def __eq__(self, other):
+    return self.currentValue() == other
+
+  def currentValue(self):
+    raise NotImplementedError
+
+
+class Sensor(Base):
+  identity = Column(String)
+  name = Column(String)
+
+  __mapper_args__ = {
+      'polymorphic_on': 'identity'
+  }
+
+  def currentValue(self):
+    raise NotImplementedError
+
+class Clock(Sensor):
+  __tablename__ = None
+
+__mapper_args__ = {
+  'polymorphic_identity': 'clock'
+}
+
+reference = Column(Float)
+
+def currentValue(self):
+  return time() - self.reference
 
 
 @dataclass
-class ScaledAnimation(AnimationMathMixin):
-  value: Union[Animation, float, int]
-  scale: Union[Animation, float, int]
-
-  def getValueAtTime(self, time: float) -> Any:
-    return self.value.getValueAtTime(time) * self.scale
-
-
-@dataclass
-class AnimationSum(AnimationMathMixin):
-  value: Animation
-  other: Animation
-
-  def getValueAtTime(self, time: float) -> Any:
-    return self.value.getValueAtTime(time) + self.other.getValueAtTime(time)
-
-
-@dataclass
-class Animation(AnimationMathMixin):
+class Animation(MathProxyMixin):
   keyframes: List[Keyframe]
-  repeat: float = field(init=False, default=0.0)
-  reference: float = field(init=False, default=0.0)
-
-  def start(self, repeat: float = inf) -> None:
-    self.repeat = repeat
-    self.length = self.keyframes[len(self.keyframes) - 1].position - self.keyframes[0].position
-    self.reference = monotonic()
-
-  def getValueAtTime(self, time: float) -> Any:
-    try:
-      if self.length != 0 and (time - self.reference) / self.length <= self.repeat:
-        return blend(self.keyframes, position=(time - self.reference) % self.length)
-      else:
-        # When the animation is not running, it uses the value of the first keyframe
-        return self.keyframes[0].value
-    except AttributeError:
-      raise AttributeError('Animation not started')
-
-  @classmethod
-  def fromValue(cls, value: Any):
-    animation = cls([Keyframe(value, position=0.0)])
-    animation.start()
-    return animation
-
-
-class DimensionAnimation(Animation, Base):
   repeat = Column(Float)
+
+  @declared_attr
+  def sensor_id(self):
+    return Column(Integer, ForeignKey('sensor.id'))
+
+  @declared_attr
+  def sensor(self):
+    return relationship(Sensor)
+
+  def currentValue(self) -> Any:
+    pos = self.sensor.currentValue()
+    length = self.keyframes[-1].position - self.keyframes[0].position
+
+    return blend(self.keyframes, pos % length if pos <= self.repeat * length else length)
+
+
+class Dimension(Base):
+  identity = Column(String)
+
+  __mapper_args__ = {
+      'polymorphic_on': 'identity'
+  }
+
+
+class StaticDimension(Dimension, MathProxyMixin):
+  __tablename__ = None
+
+  value = Column(Float)
+
+  def currentValue(self):
+    return self.value
+
+  __mapper_args__ = {
+      'polymorphic_identity': 'static'
+  }
+
+
+class DimensionAnimation(Animation, Dimension):
+  __tablename__ = None
+
   keyframes = relationship(DimensionKeyframe)
+
+  __mapper_args__ = {
+    'polymorphic_identity': 'animation'
+  }
 
 
 class Image(Base):
   identity = Column(String)
 
   __mapper_args__ = {
-    'polymorphic_identity': 'image',
     'polymorphic_on': 'identity'
   }
 
-  def getColorAtPositionAndTime(self, pos: float, time: float) -> Color:
-    pass
+  def getColorAtPosition(self, pos: float) -> Color:
+    raise NotImplementedError
 
 
 
-class Color(Image, RightMathMixin):
+class Color(Image):
   __tablename__ = None
 
   __mapper_args__ = {
@@ -173,11 +238,14 @@ class Color(Image, RightMathMixin):
     result.opacity = self.opacity + other.opacity
     return result
 
-  # Implement image rendering
-  def getColorAtPositionAndTime(self, pos: float, time: float) -> Color:
-    return self.getValueAtTime(time)
+  def __rmul__(self, other):
+    return self.__mul__(other)
 
-  def getValueAtTime(self, time: float):
+  def __radd__(self, other):
+    return self.__add__(other)
+
+  # Implement image rendering
+  def getColorAtPosition(self, pos: float) -> Color:
     return self
 
   # Returns a new instance of transparent black
@@ -200,12 +268,11 @@ class ColorAnimation(Animation, Image):
       'polymorphic_identity': 'coloranimation'
   }
 
-  repeat = Column(Float)
   keyframes = relationship(ColorKeyframe, foreign_keys=ColorKeyframe.animation_id)
 
   # Implement image rendering
-  def getColorAtPositionAndTime(self, pos: float, time: float) -> Color:
-    return self.getValueAtTime(time)
+  def getColorAtPosition(self, pos: float) -> Color:
+    return self.currentValue()
 
 
 class ColorStop(Keyframe, Base):
@@ -224,34 +291,23 @@ class Gradient(Image):
 
   colorstops = relationship(ColorStop, foreign_keys=ColorStop.gradient_id)
 
-  def __init__(self, colorstops: List[ColorStop]):
-    super().__init__()
-    if len(colorstops) == 0:
-      raise ValueError
-    self.colorstops = colorstops
-    # Colour in the endpoints
-    insort_left(self.colorstops, ColorStop(self.colorstops[0].value, 0.0))
-    insort_right(self.colorstops, ColorStop(self.colorstops[len(self.colorstops) - 1].value, 1.0))
-
-  def getColorAtPositionAndTime(self, pos: float, time: float):
-    return blend(self.colorstops, pos).getValueAtTime(time)
+  def getColorAtPosition(self, pos: float):
+    return blend(self.colorstops, pos)
 
 
 class Layer(Base):
   scene_id = Column(Integer, ForeignKey('scene.id'))
   image_id = Column(Integer, ForeignKey('image.id'))
   image = relationship(Image)
-  size_id = Column(Integer, ForeignKey('dimensionanimation.id'))
-  size = relationship(DimensionAnimation, foreign_keys=size_id)
-  left_id = Column(Integer, ForeignKey('dimensionanimation.id'))
-  left = relationship(DimensionAnimation, foreign_keys=left_id)
+  size_id = Column(Integer, ForeignKey('dimension.id'))
+  size = relationship(Dimension, foreign_keys=size_id)
+  left_id = Column(Integer, ForeignKey('dimension.id'))
+  left = relationship(Dimension, foreign_keys=left_id)
   repeat = Column(Float)
 
-  def getColorAtPositionAndTime(self, pos: float, time: float) -> Color:
-    left = self.left.getValueAtTime(time)
-    size = self.size.getValueAtTime(time)
-    if (pos - left) / size <= self.repeat:
-      return self.image.getColorAtPositionAndTime(((pos - left) % size) / size, time)
+  def getColorAtPosition(self, pos: float) -> Color:
+    if (pos - self.left) / self.size <= self.repeat:
+      return self.image.getColorAtPosition(((pos - self.left) % self.size) / self.size)
     else:
       return Color.transparent()
 
@@ -260,12 +316,12 @@ class Scene(Base):
   name = Column(String)
   layers = relationship(Layer)
 
-  def getColorAtPositionAndTime(self, pos: float, time: float) -> Color:
+  def getColorAtPosition(self, pos: float) -> Color:
     # Start with an opaque black background
     result = Color(0.0, 0.0, 0.0)
     # Blend colours layer by layer
     for layer in self.layers:
-      color = layer.getColorAtPositionAndTime(pos, time)
+      color = layer.getColorAtPosition(pos)
       result = result * (1.0 - color.opacity) + color
     return result
 
@@ -278,4 +334,3 @@ class Device(Base):
   scene_id = Column(Integer, ForeignKey('scene.id'))
   scene = relationship(Scene)
 
-# TODO: id, tablename
