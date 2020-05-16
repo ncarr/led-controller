@@ -1,24 +1,20 @@
 from __future__ import annotations
-from math import inf
-from bisect import bisect, insort_left, insort_right
+from bisect import bisect
 from dataclasses import dataclass, field
-from typing import List, Union, TypeVar, Any
+from typing import List, Union, Any
 from time import time
 from functools import total_ordering
-from sqlalchemy import create_engine, Column, Integer, Float, String, ForeignKey, MetaData, Table
-from sqlalchemy.orm import relationship, mapper, sessionmaker
-from sqlalchemy.ext.declarative import declarative_base, declared_attr
+from sqlalchemy import Column, Integer, Float, String, ForeignKey, MetaData, Table
+from sqlalchemy.orm import relationship
+from sqlalchemy.ext.declarative import as_declarative, declared_attr
 
+@as_declarative()
 class Base(object):
-  @classmethod
   @declared_attr
-  def __tablename__(cls):
-    return cls.__name__.lower()
+  def __tablename__(cls):  # pylint: disable=no-self-argument
+    return cls.__name__.lower()  # pylint: disable=no-member
 
   id = Column(Integer, primary_key=True)
-
-
-Base = declarative_base(cls=Base)
 
 
 """
@@ -32,7 +28,7 @@ class Keyframe:
   position: float
 
 
-def blend(keyframes: List[Keyframe], position: float) -> Any:
+def blend(keyframes: List[Keyframe], position: float):
   if position < keyframes[0].position:
     return keyframes[0].value
   if position >= keyframes[-1].position:
@@ -130,9 +126,9 @@ class Animation(MathProxyMixin):
 
   @declared_attr
   def sensor(self):
-    return relationship(Sensor)
+    return relationship(Sensor, cascade='all, delete-orphan', single_parent=True)
 
-  def currentValue(self) -> Any:
+  def currentValue(self):
     pos = self.sensor.currentValue()
     length = self.keyframes[-1].position - self.keyframes[0].position
 
@@ -163,7 +159,7 @@ class StaticDimension(Dimension, MathProxyMixin):
 class DimensionAnimation(Animation, Dimension):
   __tablename__ = None
 
-  keyframes = relationship(DimensionKeyframe)
+  keyframes = relationship(DimensionKeyframe, cascade='all, delete-orphan', order_by=DimensionKeyframe.position)
 
   __mapper_args__ = {
     'polymorphic_identity': 'animation'
@@ -257,7 +253,7 @@ class Color(Image):
 class ColorKeyframe(Keyframe, Base):
   animation_id = Column(Integer, ForeignKey('image.id'))
   color_id = Column(Integer, ForeignKey('image.id'))
-  value = relationship(Color, foreign_keys=color_id)
+  value = relationship(Color, foreign_keys=color_id, cascade='all, delete-orphan', single_parent=True)
   position = Column(Float)
 
 
@@ -268,7 +264,7 @@ class ColorAnimation(Animation, Image):
       'polymorphic_identity': 'coloranimation'
   }
 
-  keyframes = relationship(ColorKeyframe, foreign_keys=ColorKeyframe.animation_id)
+  keyframes = relationship(ColorKeyframe, foreign_keys=ColorKeyframe.animation_id, cascade='all, delete-orphan', order_by=ColorKeyframe.position)
 
   # Implement image rendering
   def getColorAtPosition(self, pos: float) -> Color:
@@ -278,7 +274,7 @@ class ColorAnimation(Animation, Image):
 class ColorStop(Keyframe, Base):
   gradient_id = Column(Integer, ForeignKey('image.id'))
   color_id = Column(Integer, ForeignKey('image.id'))
-  value = relationship(Color, foreign_keys=color_id)
+  value = relationship(Color, foreign_keys=color_id, cascade='all, delete-orphan', single_parent=True)
   position = Column(Float)
 
 
@@ -289,7 +285,7 @@ class Gradient(Image):
       'polymorphic_identity': 'gradient'
   }
 
-  colorstops = relationship(ColorStop, foreign_keys=ColorStop.gradient_id)
+  colorstops = relationship(ColorStop, foreign_keys=ColorStop.gradient_id, cascade='all, delete-orphan', order_by=ColorStop.position)
 
   def getColorAtPosition(self, pos: float):
     return blend(self.colorstops, pos)
@@ -298,11 +294,13 @@ class Gradient(Image):
 class Layer(Base):
   scene_id = Column(Integer, ForeignKey('scene.id'))
   image_id = Column(Integer, ForeignKey('image.id'))
-  image = relationship(Image)
+  image = relationship(Image, cascade='all, delete-orphan', single_parent=True)
   size_id = Column(Integer, ForeignKey('dimension.id'))
-  size = relationship(Dimension, foreign_keys=size_id)
+  size = relationship(Dimension, foreign_keys=size_id,
+                      cascade='all, delete-orphan', single_parent=True)
   left_id = Column(Integer, ForeignKey('dimension.id'))
-  left = relationship(Dimension, foreign_keys=left_id)
+  left = relationship(Dimension, foreign_keys=left_id,
+                      cascade='all, delete-orphan', single_parent=True)
   repeat = Column(Float)
 
   def getColorAtPosition(self, pos: float) -> Color:
@@ -314,7 +312,7 @@ class Layer(Base):
 
 class Scene(Base):
   name = Column(String)
-  layers = relationship(Layer)
+  layers = relationship(Layer, cascade='all, delete-orphan')
 
   def getColorAtPosition(self, pos: float) -> Color:
     # Start with an opaque black background
@@ -332,5 +330,5 @@ class Device(Base):
   led_strip = Column(Integer)
   name = Column(String)
   scene_id = Column(Integer, ForeignKey('scene.id'))
-  scene = relationship(Scene)
+  scene = relationship(Scene, cascade='all, delete-orphan', single_parent=True)
 
