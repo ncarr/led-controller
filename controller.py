@@ -4,8 +4,9 @@ from dataclasses import dataclass, field
 from typing import List, Union, Any
 from time import time
 from functools import total_ordering
+from copy import copy, deepcopy
 from sqlalchemy import Column, Integer, Float, String, ForeignKey, MetaData, Table
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, RelationshipProperty, ColumnProperty
 from sqlalchemy.ext.declarative import as_declarative, declared_attr
 
 @as_declarative()
@@ -16,6 +17,36 @@ class Base(object):
 
   id = Column(Integer, primary_key=True)
 
+  """
+  Shallow-copies all related objects and values in all columns except for primary keys.
+  Note: this means that the copy will still be connected to all objects in the original object's relationships.
+  This could break the single_parent constraint.
+  """
+  def __copy__(self):
+    cls = type(self)
+    copied = cls()
+    for attr in self.__mapper__.attrs:
+      if isinstance(attr, ColumnProperty):
+        if not attr.columns[0].primary_key:
+          setattr(copied, attr.key, getattr(self, attr.key))
+      elif isinstance(attr, RelationshipProperty):
+        setattr(copied, attr.key, getattr(self, attr.key))
+    return copied
+
+  """
+  Deep-copies all related objects and values in all columns, removing all primary keys and foreign keys.
+  The copy can safely be saved into the same table
+  """
+  def __deepcopy__(self, memo):
+    cls = type(self)
+    copied = cls()
+    for attr in self.__mapper__.attrs:
+      if isinstance(attr, ColumnProperty):
+        if not attr.columns[0].primary_key and not attr.columns[0].foreign_keys:
+          setattr(copied, attr.key, deepcopy(getattr(self, attr.key), memo))
+      elif isinstance(attr, RelationshipProperty):
+        setattr(copied, attr.key, deepcopy(getattr(self, attr.key), memo))
+    return copied
 
 """
 Generic base class for anything that acts as a stop on a continuous spectrum
@@ -185,20 +216,21 @@ class Color(Image):
       'polymorphic_identity': 'color'
   }
 
+  # Colours should be in the premultiplied space
+  # e.g. the RGBWA values for pure red at 50% opacity
+  # are (127.5, 0, 0, 0, 0.5), not (255, 0, 0, 0, 0.5)
   red = Column(Float)
   green = Column(Float)
   blue = Column(Float)
   white = Column(Float)
   opacity = Column(Float)
 
-  def __init__(self, red: float, green: float, blue: float, white=0.0, opacity=1.0) -> None:
-    super().__init__()
-    # Premultiply the colours for easier processing
-    self.red = red * opacity
-    self.green = green * opacity
-    self.blue = blue * opacity
-    self.white = white * opacity
-    self.opacity = opacity
+  def __init__(self, **kwargs) -> None:
+    super().__init__(**kwargs)
+    if self.white is None:
+      self.white = 0.0
+    if self.opacity is None:
+      self.opacity = 1.0
 
   # Converts to WS281x Color object
   def toWS281xColor(self) -> int:
@@ -316,7 +348,7 @@ class Scene(Base):
 
   def getColorAtPosition(self, pos: float) -> Color:
     # Start with an opaque black background
-    result = Color(0.0, 0.0, 0.0)
+    result = Color(red=0.0, green=0.0, blue=0.0)
     # Blend colours layer by layer
     for layer in self.layers:
       color = layer.getColorAtPosition(pos)
