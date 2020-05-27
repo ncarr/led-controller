@@ -1,108 +1,50 @@
-from graphene import relay, Mutation, ObjectType, Schema, String, Float, Field, InputObjectType, ID
+from copy import deepcopy
+from graphene import Mutation, ObjectType, Schema, String, Float, Argument, Field, ID, Union, List, Enum
 from graphene_sqlalchemy import SQLAlchemyObjectType, SQLAlchemyConnectionField
-from .database import session, Device as DeviceModel, Scene as SceneModel, Animation as AnimationModel, Layer as LayerModel, Image as ImageModel
-from graphql_relay.node.node import from_global_id
+from controller import Base, Device as DeviceModel, Scene as SceneModel, Animation as AnimationModel, Layer as LayerModel, Color as ColorModel, ColorAnimation as ColorAnimationModel, Gradient as GradientModel, ColorStop as ColorStopModel, ColorKeyframe as ColorKeyframeModel, DimensionAnimation as DimensionAnimationModel, StaticDimension as StaticDimensionModel, Clock as ClockModel, DimensionKeyframe as DimensionKeyframeModel
+from sqlalchemy import create_engine
+from sqlalchemy.orm import scoped_session, sessionmaker
+from graphqlutils import SQLAlchemyInputObjectType, AnimationType, DimensionType
+from graphene_sqlalchemy.types import ORMField
 
-def input_to_dictionary(user_input):
-  dictionary = {}
-  for key in user_input:
-    if key.endswith('id'):
-      dictionary[key] = from_global_id(user_input[key])[1]
-    else:
-      dictionary[key] = user_input[key]
-  return dictionary
+engine = create_engine('sqlite:///data.sqlite3', convert_unicode=True)
+Base.metadata.create_all(engine)
+session = scoped_session(sessionmaker(autocommit=False,
+                                      autoflush=False,
+                                      bind=engine))
 
-def create_mutation(name, properties, output_type, orm_model):
-  class CreateInput(InputObjectType, properties):
-    pass
-
-  class CreateMutation(Mutation):
-    class Meta:
-      name = 'Create' + output_type.__name__
-    class Arguments:
-      pass
-
-    @staticmethod
-    def mutate(root, info, **kwargs):
-      value = kwargs[name]
-      orm_object = orm_model(**value)
-      session.add(orm_object)
-      session.commit()
-      return CreateMutation(**{name: orm_object})
-  setattr(CreateMutation.Arguments, name, CreateInput(required=True))
-  setattr(CreateMutation, name, Field(lambda: output_type))
-  return CreateMutation
-
-
-def update_mutation(name, properties, output_type, orm_model):
-  class UpdateInput(InputObjectType, properties):
-    id = ID(required=True)
-  
-  class UpdateMutation(Mutation):
-    class Meta:
-      name = 'Update' + output_type.__name__
-    class Arguments:
-      pass
-
-    @staticmethod
-    def mutate(root, info, **kwargs):
-      value = kwargs[name]
-      orm_object = session.query(orm_model).filter(
-          orm_model.id == value.id).one()
-      for key in value:
-        setattr(orm_object, key, value[key])
-      session.commit()
-      return UpdateMutation(**{name: orm_object})
-  setattr(UpdateMutation.Arguments, name, UpdateInput(required=True))
-  setattr(UpdateMutation, name, Field(lambda: output_type))
-  return UpdateMutation
-
-
-def delete_mutation(name, output_type, orm_model):
-  class DeleteMutation(Mutation):
-    class Meta:
-      name = 'Delete' + output_type.__name__
-    class Arguments:
-      id = ID(required=True)
-
-    @staticmethod
-    def mutate(root, info, id):
-      orm_object = session.query(orm_model).filter(
-        orm_model.id == id).one()
-      session.delete(orm_object)
-      session.commit()
-      return DeleteMutation(**{name: orm_object})
-  setattr(DeleteMutation, name, Field(lambda: output_type))
-  return DeleteMutation
-
-class DeviceProperties:
-    name = String()
-    led_count = String()
-    gpio_pin = String()
-    led_strip = String()
+Base.query = session.query_property()
+Base.session = session
 
 
 class Device(SQLAlchemyObjectType):
   class Meta:
     model = DeviceModel
-    interfaces = (relay.Node, )
+    exclude_fields = ('scene_id',)
 
-
-class DeviceConnection(relay.Connection):
+class DeviceInput(SQLAlchemyInputObjectType):
   class Meta:
-    node = Device
+    model = DeviceModel
+    exclude_fields = ('scene_id', 'scene')
 
+class CreateDevice(Mutation):
+  class Arguments:
+    fields = Argument(DeviceInput)
+  result = Field(Device)
+  mutate = lambda root, info, fields: CreateDevice(result=DeviceModel.create(root, info, fields))
 
-CreateDevice = create_mutation(
-    name='device', properties=DeviceProperties, output_type=Device, orm_model=DeviceModel)
+class UpdateDevice(Mutation):
+  class Arguments:
+    id = ID(required=True)
+    fields = Argument(DeviceInput)
+  result = Field(Device)
+  mutate = lambda root, info, id, fields: UpdateDevice(result=DeviceModel.update(root, info, id, fields))
 
-
-UpdateDevice = create_mutation(
-    name='device', properties=DeviceProperties, output_type=Device, orm_model=DeviceModel)
-
-
-DeleteDevice = create_mutation(
-    name='device', output_type=Device, orm_model=DeviceModel)
+class DeleteDevice(Mutation):
+  class Arguments:
+    id = ID(required=True)
+  result = Field(Device)
+  mutate = lambda root, info, id: DeleteDevice(result=DeviceModel.delete(root, info, id))
 
 
 class SetScene(Mutation):
@@ -114,68 +56,383 @@ class SetScene(Mutation):
 
   @staticmethod
   def mutate(root, info, device_id, scene_id):
-    device_object = session.query(DeviceModel).filter(
-        DeviceModel.id == id).one()
-    device_object.scene_id = scene_id
+    device_object = session.query(DeviceModel).filter(DeviceModel.id == device_id).one()
+    scene_object = session.query(SceneModel).filter(SceneModel.id == scene_id).one()
+    scene_copy = deepcopy(scene_object)
+    device_object.scene = scene_copy
     session.commit()
     return SetScene(device=device_object)
-
-
-class SceneProperties:
-    name = String()
-
 
 class Scene(SQLAlchemyObjectType):
   class Meta:
     model = SceneModel
-    interfaces = (relay.Node, )
 
-
-CreateScene = create_mutation(
-    name='scene', properties=SceneProperties, output_type=Scene, orm_model=SceneModel)
-
-
-UpdateScene = update_mutation(
-    name='scene', properties=SceneProperties, output_type=Scene, orm_model=SceneModel)
-
-
-DeleteScene = delete_mutation(
-    name='scene', output_type=Scene, orm_model=SceneModel)
-
-
-class Image(SQLAlchemyObjectType):
+class SceneInput(SQLAlchemyInputObjectType):
   class Meta:
-    model = ImageModel
-    interfaces = (relay.Node, )
+    model = SceneModel
+    exclude_fields = ('layers',)
+
+class CreateScene(Mutation):
+  class Arguments:
+    fields = Argument(SceneInput)
+  result = Field(Scene)
+  mutate = lambda root, info, fields: CreateScene(
+      result=SceneModel.create(root, info, fields))
+
+class UpdateScene(Mutation):
+  class Arguments:
+    id = ID(required=True)
+    fields = Argument(SceneInput)
+  result = Field(Scene)
+  mutate = lambda root, info, id, fields: UpdateScene(
+      result=SceneModel.update(root, info, id, fields))
+
+class DeleteScene(Mutation):
+  class Arguments:
+    id = ID(required=True)
+  result = Field(Scene)
+  mutate = lambda root, info, id: DeleteScene(
+      result=SceneModel.delete(root, info, id))
 
 
-class LayerProperties:
-    image = Field(lambda: Image)
-    left = Float()
-    size = Float()
-    repeat = Float()
+class Clock(SQLAlchemyObjectType):
+  class Meta:
+    model = ClockModel
+    exclude_fields = ('identity',)
+
+class ClockInput(SQLAlchemyInputObjectType):
+  class Meta:
+    model = ClockModel
+    exclude_fields = ('identity',)
+
+class CreateClock(Mutation):
+  class Arguments:
+    animation_id = ID(required=True)
+    animation_type = Argument(AnimationType)
+    fields = Argument(ClockInput)
+  result = Field(Clock)
+  mutate = lambda root, info, animation_id, animation_type, fields: CreateClock(
+      result=ClockModel.create(root, info, animation_id, animation_type, fields))
+
+class UpdateClock(Mutation):
+  class Arguments:
+    id = ID(required=True)
+    fields = Argument(ClockInput)
+  result = Field(Clock)
+  mutate = lambda root, info, id, fields: UpdateClock(
+      result=ClockModel.update(root, info, id, fields))
+
+
+class Sensor(Union):
+  class Meta:
+    types = (Clock,)
+
+class DimensionAnimation(SQLAlchemyObjectType):
+  class Meta:
+    model = DimensionAnimationModel
+    exclude_fields = ('identity', 'sensor_id')
+
+class DimensionAnimationInput(SQLAlchemyInputObjectType):
+  class Meta:
+    model = DimensionAnimationModel
+    exclude_fields = ('identity', 'sensor_id', 'sensor', 'keyframes')
+
+class CreateDimensionAnimation(Mutation):
+  class Arguments:
+    layer_id = ID(required=True)
+    dimension_type = Argument(DimensionType)
+    fields = Argument(DimensionAnimationInput)
+  result = Field(lambda: Layer)
+  mutate = lambda root, info, layer_id, dimension_type, fields: CreateDimensionAnimation(
+      result=DimensionAnimationModel.create(root, info, layer_id, dimension_type, fields))
+
+class UpdateDimensionAnimation(Mutation):
+  class Arguments:
+    id = ID(required=True)
+    fields = Argument(DimensionAnimationInput)
+  result = Field(DimensionAnimation)
+  mutate = lambda root, info, id, fields: UpdateDimensionAnimation(
+      result=DimensionAnimationModel.update(root, info, id, fields))
+
+class DimensionKeyframe(SQLAlchemyObjectType):
+  class Meta:
+    model = DimensionKeyframeModel
+    exclude_fields = ('animation_id',)
+
+class DimensionKeyframeInput(SQLAlchemyInputObjectType):
+  class Meta:
+    model = DimensionKeyframeModel
+    exclude_fields = ('animation_id',)
+  
+class CreateDimensionKeyframe(Mutation):
+  class Arguments:
+    animation_id = ID(required=True)
+    fields = Argument(DimensionKeyframeInput)
+  result = Field(DimensionKeyframe)
+  mutate = lambda root, info, animation_id, fields: CreateDimensionKeyframe(
+      result=DimensionKeyframeModel.create(root, info, animation_id, fields))
+
+class UpdateDimensionKeyframe(Mutation):
+  class Arguments:
+    id = ID(required=True)
+    fields = Argument(DimensionKeyframeInput)
+  result = Field(DimensionKeyframe)
+  mutate = lambda root, info, id, fields: UpdateDimensionKeyframe(
+      result=DimensionKeyframeModel.update(root, info, id, fields))
+
+class DeleteDimensionKeyframe(Mutation):
+  class Arguments:
+    id = ID(required=True)
+  result = Field(DimensionKeyframe)
+  mutate = lambda root, info, id: DeleteDimensionKeyframe(
+      result=DimensionKeyframeModel.delete(root, info, id))
+
+class StaticDimension(SQLAlchemyObjectType):
+  class Meta:
+    model = StaticDimensionModel
+    exclude_fields = ('identity',)
+
+class StaticDimensionInput(SQLAlchemyInputObjectType):
+  class Meta:
+    model = StaticDimensionModel
+    exclude_fields = ('identity',)
+
+class CreateStaticDimension(Mutation):
+  class Arguments:
+    layer_id = ID(required=True)
+    dimension_type = Argument(DimensionType)
+    fields = Argument(StaticDimensionInput)
+  result = Field(lambda: Layer)
+  mutate = lambda root, info, layer_id, dimension_type, fields: CreateStaticDimension(
+      result=StaticDimensionModel.create(root, info, layer_id, dimension_type, fields))
+
+class UpdateStaticDimension(Mutation):
+  class Arguments:
+    id = ID(required=True)
+    fields = Argument(StaticDimensionInput)
+  result = Field(StaticDimension)
+  mutate = lambda root, info, id, fields: UpdateStaticDimension(
+      result=StaticDimensionModel.update(root, info, id, fields))
+
+class Dimension(Union):
+  class Meta:
+    types = (DimensionAnimation, StaticDimension)
+
+
+class Color(SQLAlchemyObjectType):
+  class Meta:
+    model = ColorModel
+    exclude_fields = ('identity',)
+
+class ColorInput(SQLAlchemyInputObjectType):
+  class Meta:
+    model = ColorModel
+    exclude_fields = ('identity',)
+
+class CreateColor(Mutation):
+  class Arguments:
+    layer_id = ID(required=True)
+    fields = Argument(ColorInput)
+  result = Field(lambda: Layer)
+  mutate = lambda root, info, layer_id, fields: CreateColor(
+      result=ColorModel.create(root, info, layer_id, fields))
+
+class UpdateColor(Mutation):
+  class Arguments:
+    id = ID(required=True)
+    fields = Argument(ColorInput)
+  result = Field(Color)
+  mutate = lambda root, info, id, fields: UpdateColor(
+      result=ColorModel.update(root, info, id, fields))
+
+class ColorAnimation(SQLAlchemyObjectType):
+  class Meta:
+    model = ColorAnimationModel
+    exclude_fields = ('identity', 'sensor_id')
+  sensor = ORMField(type=Sensor)
+
+class ColorAnimationInput(SQLAlchemyInputObjectType):
+  class Meta:
+    model = ColorAnimationModel
+    exclude_fields = ('identity', 'sensor_id', 'keyframes', 'sensor')
+
+class CreateColorAnimation(Mutation):
+  class Arguments:
+    layer_id = ID(required=True)
+    fields = Argument(ColorAnimationInput)
+  result = Field(lambda: Layer)
+  mutate = lambda root, info, layer_id, fields: CreateColorAnimation(
+      result=ColorAnimationModel.create(root, info, layer_id, fields))
+
+class UpdateColorAnimation(Mutation):
+  class Arguments:
+    id = ID(required=True)
+    fields = Argument(ColorAnimationInput)
+  result = Field(ColorAnimation)
+  mutate = lambda root, info, id, fields: UpdateColorAnimation(
+      result=ColorAnimationModel.update(root, info, id, fields))
+
+class ColorKeyframe(SQLAlchemyObjectType):
+  class Meta:
+    model = ColorKeyframeModel
+    exclude_fields = ('animation_id', 'color_id')
+
+class ColorKeyframeInput(SQLAlchemyInputObjectType):
+  class Meta:
+    model = ColorKeyframeModel
+    exclude_fields = ('animation_id', 'color_id')
+  
+class CreateColorKeyframe(Mutation):
+  class Arguments:
+    animation_id = ID(required=True)
+    fields = Argument(ColorKeyframeInput)
+  result = Field(ColorKeyframe)
+  mutate = lambda root, info, animation_id, fields: CreateColorKeyframe(
+      result=ColorKeyframeModel.create(root, info, animation_id, fields))
+
+class UpdateColorKeyframe(Mutation):
+  class Arguments:
+    id = ID(required=True)
+    fields = Argument(ColorKeyframeInput)
+  result = Field(ColorKeyframe)
+  mutate = lambda root, info, id, fields: UpdateColorKeyframe(
+      result=ColorKeyframeModel.update(root, info, id, fields))
+
+class DeleteColorKeyframe(Mutation):
+  class Arguments:
+    id = ID(required=True)
+  result = Field(ColorKeyframe)
+  mutate = lambda root, info, id: DeleteColorKeyframe(
+      result=ColorKeyframeModel.delete(root, info, id))
+
+class Gradient(SQLAlchemyObjectType):
+  class Meta:
+    model = GradientModel
+    exclude_fields = ('identity',)
+
+class CreateGradient(Mutation):
+  class Arguments:
+    layer_id = ID(required=True)
+  result = Field(lambda: Layer)
+  mutate = lambda root, info, layer_id, fields: CreateGradient(
+      result=GradientModel.create(root, info, layer_id))
+
+
+class ColorStop(SQLAlchemyObjectType):
+  class Meta:
+    model = ColorStopModel
+    exclude_fields = ('gradient_id', 'color_id')
+
+class ColorStopInput(SQLAlchemyInputObjectType):
+  class Meta:
+    model = ColorStopModel
+    exclude_fields = ('gradient_id', 'color_id')
+  
+class CreateColorStop(Mutation):
+  class Arguments:
+    gradient_id = ID(required=True)
+    fields = Argument(ColorStopInput)
+  result = Field(ColorStop)
+  mutate = lambda root, info, gradient_id, fields: CreateColorStop(
+      result=ColorStopModel.create(root, info, gradient_id, fields))
+
+class UpdateColorStop(Mutation):
+  class Arguments:
+    id = ID(required=True)
+    fields = Argument(ColorStopInput)
+  result = Field(ColorStop)
+  mutate = lambda root, info, id, fields: UpdateColorStop(
+      result=ColorStopModel.update(root, info, id, fields))
+
+class DeleteColorStop(Mutation):
+  class Arguments:
+    id = ID(required=True)
+  result = Field(ColorStop)
+  mutate = lambda root, info, id: DeleteColorStop(
+      result=ColorStopModel.delete(root, info, id))
+
+
+class Image(Union):
+  class Meta:
+    types = (Color, ColorAnimation, Gradient)
 
 
 class Layer(SQLAlchemyObjectType):
   class Meta:
-    model = SceneModel
-    interfaces = (relay.Node, )
+    model = LayerModel
+    exclude_fields = ('scene_id', 'image_id', 'size_id', 'left_id')
+  image = ORMField(type=Image)
+  size = ORMField(type=Dimension)
+  left = ORMField(type=Dimension)
+
+class LayerInput(SQLAlchemyInputObjectType):
+  class Meta:
+    model = LayerModel
+    exclude_fields = ('scene_id', 'image_id', 'size_id', 'left_id')
+
+class CreateLayer(Mutation):
+  class Arguments:
+    scene_id = ID(required=True)
+    fields = Argument(LayerInput)
+  result = Field(Layer)
+  mutate = lambda root, info, scene_id, fields: CreateLayer(
+      result=LayerModel.create(root, info, scene_id, fields))
+
+class UpdateLayer(Mutation):
+  class Arguments:
+    id = ID(required=True)
+    fields = Argument(LayerInput)
+  result = Field(Layer)
+  mutate = lambda root, info, id, fields: UpdateLayer(
+      result=LayerModel.update(root, info, id, fields))
+
+class DeleteLayer(Mutation):
+  class Arguments:
+    id = ID(required=True)
+  result = Field(Layer)
+  mutate = lambda root, info, id: DeleteLayer(
+      result=LayerModel.delete(root, info, id))
 
 
-CreateLayer = create_mutation(
-    name='layer', properties=LayerProperties, output_type=Layer, orm_model=LayerModel)
+class RootQuery(ObjectType):
+  devices = List(Device)
+
+  def resolve_devices(self, info):
+    query = Device.get_query(info)
+    return query.all()
 
 
-UpdateLayer = update_mutation(
-    name='layer', properties=LayerProperties, output_type=Layer, orm_model=LayerModel)
+class RootMutation(ObjectType):
+  createDevice = CreateDevice.Field()
+  updateDevice = UpdateDevice.Field()
+  deleteDevice = DeleteDevice.Field()
+  setScene = SetScene.Field()
+  createScene = CreateScene.Field()
+  updateScene = UpdateScene.Field()
+  deleteScene = DeleteScene.Field()
+  createClock = CreateClock.Field()
+  updateClock = UpdateClock.Field()
+  createDimensionAnimation = CreateDimensionAnimation.Field()
+  updateDimensionAnimation = UpdateDimensionAnimation.Field()
+  createDimensionKeyframe = CreateDimensionKeyframe.Field()
+  updateDimensionKeyframe = UpdateDimensionKeyframe.Field()
+  deleteDimensionKeyframe = DeleteDimensionKeyframe.Field()
+  createStaticDimension = CreateStaticDimension.Field()
+  updateStaticDimension = UpdateStaticDimension.Field()
+  createColor = CreateColor.Field()
+  updateColor = UpdateColor.Field()
+  createColorAnimation = CreateColorAnimation.Field()
+  updateColorAnimation = UpdateColorAnimation.Field()
+  createColorKeyframe = CreateColorKeyframe.Field()
+  updateColorKeyframe = UpdateColorKeyframe.Field()
+  deleteColorKeyframe = DeleteColorKeyframe.Field()
+  createGradient = CreateGradient.Field()
+  createColorStop = CreateColorStop.Field()
+  updateColorStop = UpdateColorStop.Field()
+  deleteColorStop = DeleteColorStop.Field()
+  createLayer = CreateLayer.Field()
+  updateLayer = UpdateLayer.Field()
+  deleteLayer = DeleteLayer.Field()
 
 
-DeleteLayer = delete_mutation(
-    name='layer', output_type=Layer, orm_model=LayerModel)
-
-
-class Query(ObjectType):
-  node = relay.Node.Field()
-  devices = SQLAlchemyConnectionField(DeviceConnection)
-
-schema = Schema(query=Query)
+schema = Schema(query=RootQuery, mutation=RootMutation)

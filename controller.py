@@ -8,6 +8,8 @@ from copy import copy, deepcopy
 from sqlalchemy import Column, Integer, Float, String, ForeignKey, MetaData, Table
 from sqlalchemy.orm import relationship, RelationshipProperty, ColumnProperty
 from sqlalchemy.ext.declarative import as_declarative, declared_attr
+from graphqlutils import input_to_dictionary, AnimationType, DimensionType
+from graphql_relay.node.node import from_global_id
 
 @as_declarative()
 class Base(object):
@@ -48,6 +50,46 @@ class Base(object):
         setattr(copied, attr.key, deepcopy(getattr(self, attr.key), memo))
     return copied
 
+  """
+  Create mutation resolver for GraphQL
+  The object to be created should be under the "fields" argument
+  """
+  @classmethod
+  def create(cls, root, info, fields):
+    value = input_to_dictionary(fields)
+    orm_object = cls(**value)
+    cls.session.add(orm_object)
+    cls.session.commit()
+    return orm_object
+
+  """
+  Update mutation resolver for GraphQL
+  The ID of the object to be updated should be under the "id" argument
+  The updates should be under the "fields" argument
+  Note: only the fields specified are updated
+  """
+  @classmethod
+  def update(cls, root, info, id, fields):
+    _, db_id = from_global_id(id)
+    value = input_to_dictionary(fields)
+    orm_object = cls.session.query(cls).filter(cls.id == db_id).one()
+    for key in value:
+      setattr(orm_object, key, fields[key])
+    cls.session.commit()
+    return orm_object
+
+  """
+  Delete mutation resolver for GraphQL
+  The ID of the object to be updated should be under the "id" argument
+  """
+  @classmethod
+  def delete(cls, root, info, id):
+    _, db_id = from_global_id(id)
+    orm_object = cls.session.query(cls).filter(cls.id == db_id).one()
+    cls.session.delete(orm_object)
+    cls.session.commit()
+    return orm_object
+
 """
 Generic base class for anything that acts as a stop on a continuous spectrum
 (i.e. keyframes, colorstops)
@@ -57,6 +99,19 @@ class Keyframe:
   # To make calculations easier, keyframes are compared by position, not by value
   value: Any = field(compare=False)
   position: float
+
+  """
+  Create mutation resolver for GraphQL
+  The ID of the animation to attach the keyframe to should be under the "animation_id" argument
+  The object to be created should be under the "fields" argument
+  """
+  @classmethod
+  def create(cls, root, info, animation_id, fields):
+    value = input_to_dictionary(fields)
+    orm_object = cls(animation_id=animation_id, **value)
+    cls.session.add(orm_object)
+    cls.session.commit()
+    return orm_object
 
 
 def blend(keyframes: List[Keyframe], position: float):
@@ -136,14 +191,36 @@ class Sensor(Base):
 class Clock(Sensor):
   __tablename__ = None
 
-__mapper_args__ = {
-  'polymorphic_identity': 'clock'
-}
+  __mapper_args__ = {
+    'polymorphic_identity': 'clock'
+  }
 
-reference = Column(Float)
+  reference = Column(Float)
 
-def currentValue(self):
-  return time() - self.reference
+  def currentValue(self):
+    return time() - self.reference
+
+  """
+  Create mutation resolver for GraphQL
+  The ID of the animation to attach the keyframe to should be under the "animation_id" argument
+  The type of the animation to attach to (DIMENSION, COLOR) should be under the "animation_type" argument
+  The object to be created should be under the "fields" argument
+  """
+  @classmethod
+  def create(cls, root, info, animation_id, animation_type, fields):
+    animation = None
+    value = input_to_dictionary(fields)
+    orm_object = cls(animation_id=animation_id, **value)
+    if animation_type == AnimationType.COLOR:
+      cls.session.query(ColorAnimation).filter(
+          ColorAnimation.id == animation_id).one().sensor = orm_object
+    elif animation_type == AnimationType.DIMENSION:
+      cls.session.query(DimensionAnimation).filter(
+          DimensionAnimation.id == animation_id).one().sensor = orm_object
+    else:
+      raise ValueError('Invalid animation_type argument')
+    cls.session.commit()
+    return orm_object
 
 
 @dataclass
@@ -172,6 +249,26 @@ class Dimension(Base):
   __mapper_args__ = {
       'polymorphic_on': 'identity'
   }
+
+  """
+  Create mutation resolver for GraphQL
+  The ID of the layer to attach the dimension to should be under the "layer_id" argument
+  The type of field to mount the dimension as (SIZE or LEFT) should be under the "dimension_type" argument
+  The object to be created should be under the "fields" argument
+  """
+  @classmethod
+  def create(cls, root, info, layer_id, dimension_type, fields):
+    layer = cls.session.query(Layer).filter(Layer.id == layer_id).one()
+    value = input_to_dictionary(fields)
+    orm_object = cls(**value)
+    if (dimension_type == DimensionType.SIZE):
+      layer.size = orm_object
+    elif (dimension_type == DimensionType.LEFT):
+      layer.left = orm_object
+    else:
+      raise ValueError('Invalid dimension_type argument')
+    cls.session.commit()
+    return layer
 
 
 class StaticDimension(Dimension, MathProxyMixin):
@@ -207,6 +304,19 @@ class Image(Base):
   def getColorAtPosition(self, pos: float) -> Color:
     raise NotImplementedError
 
+  """
+  Create mutation resolver for GraphQL
+  The ID of the layer to attach the image to should be under the "layer_id" argument
+  The object to be created should be under the "fields" argument
+  """
+  @classmethod
+  def create(cls, root, info, layer_id, fields):
+    layer = cls.session.query(Layer).filter(Layer.id == layer_id).one()
+    value = input_to_dictionary(fields)
+    orm_object = cls(**value)
+    layer.image = orm_object
+    cls.session.commit()
+    return layer
 
 
 class Color(Image):
@@ -308,6 +418,19 @@ class ColorStop(Keyframe, Base):
   color_id = Column(Integer, ForeignKey('image.id'))
   value = relationship(Color, foreign_keys=color_id, cascade='all, delete-orphan', single_parent=True)
   position = Column(Float)
+
+  """
+  Create mutation resolver for GraphQL
+  The ID of the gradient to attach the color stop to should be under the "gradient_id" argument
+  The object to be created should be under the "fields" argument
+  """
+  @classmethod
+  def create(cls, root, info, gradient_id, fields):
+    value = input_to_dictionary(fields)
+    orm_object = cls(gradient_id=gradient_id, **value)
+    cls.session.add(orm_object)
+    cls.session.commit()
+    return orm_object
 
 
 class Gradient(Image):
