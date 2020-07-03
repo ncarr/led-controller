@@ -195,10 +195,11 @@ class Clock(Sensor):
     'polymorphic_identity': 'clock'
   }
 
-  reference = Column(Float)
+  start = Column(Float)
+  duration = Column(Float)
 
   def currentValue(self):
-    return time() - self.reference
+    return (time() - self.start) / self.duration
 
   """
   Create mutation resolver for GraphQL
@@ -238,9 +239,8 @@ class Animation(MathProxyMixin):
 
   def currentValue(self):
     pos = self.sensor.currentValue()
-    length = self.keyframes[-1].position - self.keyframes[0].position
 
-    return blend(self.keyframes, pos % length if pos <= self.repeat * length else length)
+    return blend(self.keyframes, pos if pos <= self.repeat else 1.0)
 
 
 class Dimension(Base):

@@ -5,7 +5,6 @@ from controller import Base, Device as DeviceModel, Scene as SceneModel, Animati
 from sqlalchemy import create_engine
 from sqlalchemy.orm import scoped_session, sessionmaker
 from graphqlutils import SQLAlchemyInputObjectType, AnimationType, DimensionType
-from graphene_sqlalchemy.types import ORMField
 
 engine = create_engine('sqlite:///data.sqlite3', convert_unicode=True)
 Base.metadata.create_all(engine)
@@ -249,7 +248,7 @@ class ColorAnimation(SQLAlchemyObjectType):
   class Meta:
     model = ColorAnimationModel
     exclude_fields = ('identity', 'sensor_id')
-  sensor = ORMField(type=Sensor)
+  sensor = Field(Sensor)
 
 class ColorAnimationInput(SQLAlchemyInputObjectType):
   class Meta:
@@ -361,9 +360,9 @@ class Layer(SQLAlchemyObjectType):
   class Meta:
     model = LayerModel
     exclude_fields = ('scene_id', 'image_id', 'size_id', 'left_id')
-  image = ORMField(type=Image)
-  size = ORMField(type=Dimension)
-  left = ORMField(type=Dimension)
+  image = Field(Image)
+  size = Field(Dimension)
+  left = Field(Dimension)
 
 class LayerInput(SQLAlchemyInputObjectType):
   class Meta:
