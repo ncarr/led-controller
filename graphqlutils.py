@@ -4,7 +4,6 @@ from graphene.relay import Connection, Node
 from graphene.types.inputobjecttype import InputObjectTypeOptions
 from graphene.types.utils import yank_fields_from_attrs
 from graphene_sqlalchemy.types import construct_fields
-from graphene_sqlalchemy.fields import default_connection_field_factory
 from graphene_sqlalchemy.enums import enum_for_field, sort_argument_for_object_type, sort_enum_for_object_type
 from graphene_sqlalchemy.registry import Registry
 from graphene_sqlalchemy.utils import is_mapped_class, is_mapped_instance, get_query
@@ -41,7 +40,8 @@ class SQLAlchemyInputObjectType(InputObjectType):
         use_connection=None,
         interfaces=(),
         id=None,
-        connection_field_factory=default_connection_field_factory,
+        batching=False,
+        connection_field_factory=None,
         _meta=None,
         **options
     ):
@@ -68,6 +68,7 @@ class SQLAlchemyInputObjectType(InputObjectType):
                 registry=registry,
                 only_fields=only_fields,
                 exclude_fields=exclude_fields+('id',),
+                batching=batching,
                 connection_field_factory=connection_field_factory,
             ),
             _as=Field,
