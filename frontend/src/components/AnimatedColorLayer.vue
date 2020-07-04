@@ -20,13 +20,19 @@
         }
     },
 
-    setAnimation() {
-      const keyframes = this.layer.image.keyframes.map(({ position, value }) => ({ offset: position, backgroundColor: torgba(value) }))
-      const timing = {
-        duration: this.layer.image.sensor.duration,
-        iterations: this.layer.image.repeat
+    methods: {
+      setAnimation() {
+        if (this.layer.image.sensor.__typename === 'Clock') {
+          const keyframes = this.layer.image.keyframes.map(({ position, value }) => ({ offset: position, backgroundColor: torgba(value) }))
+          const timing = {
+            duration: this.layer.image.sensor.duration,
+            iterations: this.layer.image.repeat,
+            fill: 'both',
+            delay: this.layer.image.sensor.start - Date.now()
+          }
+          this.$refs.image.animate(keyframes, timing)
+        }
       }
-      this.$refs.image.animate(keyframes, timing)
     },
 
     mounted() {
