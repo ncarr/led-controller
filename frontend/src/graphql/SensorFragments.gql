@@ -1,0 +1,6 @@
+fragment ClockFields on Clock {
+  id
+  name
+  start
+  duration
+}

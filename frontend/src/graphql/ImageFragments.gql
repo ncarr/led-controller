@@ -1,0 +1,36 @@
+#import "./SensorFragments.gql"
+
+fragment ColorFields on Color {
+  id
+  red
+  green
+  blue
+  white
+  opacity
+}
+
+fragment ColorAnimationFields on ColorAnimation {
+  id
+  repeat
+  sensor {
+    ...ClockFields
+  }
+  keyframes {
+    id
+    position
+    value {
+      ...ColorFields
+    }
+  }
+}
+
+fragment GradientFields on Gradient {
+  id
+  colorstops {
+    id
+    position
+    value {
+      ...ColorFields
+    }
+  }
+}

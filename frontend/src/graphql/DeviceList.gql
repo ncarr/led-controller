@@ -1,0 +1,11 @@
+#import "./RenderableScene.gql"
+
+query devices {
+  devices {
+    id
+    name
+    scene {
+	  ...RenderableScene
+    }
+  }
+}

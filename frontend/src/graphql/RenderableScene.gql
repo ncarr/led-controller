@@ -1,0 +1,24 @@
+#import "./DimensionFragments.gql"
+#import "./ImageFragments.gql"
+
+fragment RenderableScene on Scene {
+  id
+  name
+  layers {
+    id
+    repeat
+    size {
+      ...StaticDimensionFields
+      ...DimensionAnimationFields
+    }
+    left {
+      ...StaticDimensionFields
+      ...DimensionAnimationFields
+    }
+    image {
+      ...ColorFields
+      ...ColorAnimationFields
+      ...GradientFields
+    }
+  }
+}

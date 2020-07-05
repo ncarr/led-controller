@@ -27,7 +27,9 @@ export default {
 
 <style>
 .scene-view {
-  position: relative;
-  height: 10px;
+  position: absolute;
+  height: 4px;
+  left: 0;
+  right: 0;
 }
 </style>

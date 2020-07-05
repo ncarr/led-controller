@@ -1,0 +1,14 @@
+fragment StaticDimensionFields on StaticDimension {
+  id
+  value
+}
+
+fragment DimensionAnimationFields on DimensionAnimation {
+  id
+  repeat
+  keyframes {
+    id
+    value
+    position
+  }
+}
