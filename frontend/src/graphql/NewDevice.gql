@@ -1,0 +1,14 @@
+mutation NewDevice ($device: DeviceInput!) {
+  createDevice(fields: $device) {
+    result {
+      id
+      name
+      ledCount
+      gpioPin
+      ledStrip
+      scene {
+        id
+      }
+    }
+  }
+}

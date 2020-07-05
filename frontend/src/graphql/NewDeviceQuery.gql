@@ -1,0 +1,9 @@
+query newDeviceQuery {
+  devices {
+    id
+    name
+    scene {
+      id
+    }
+  }
+}
