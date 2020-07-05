@@ -3,7 +3,8 @@
 </template>
 
 <script>
-  import torgba from '../plugins/torgba'
+  import torgba from '@/plugins/torgba'
+  import animate from '@/plugins/animate'
   export default {
     name: 'AnimatedColorLayer',
 
@@ -14,24 +15,21 @@
     computed: {
         style() {
             return {
-                width: `${this.layer.size * this.layer.repeat * 100}%`,
-                left: `${this.layer.left * 100}%`
+                width: this.layer.size.__typename === 'StaticDimension' ? `${this.layer.size.value * this.layer.repeat * 100}%` : undefined,
+                left: this.layer.left.__typename === 'StaticDimension' ? `${this.layer.left.value * 100}%` : undefined
             }
         }
     },
 
     methods: {
       setAnimation() {
-        if (this.layer.image.sensor.__typename === 'Clock') {
-          const keyframes = this.layer.image.keyframes.map(({ position, value }) => ({ offset: position, backgroundColor: torgba(value) }))
-          const timing = {
-            duration: this.layer.image.sensor.duration,
-            iterations: this.layer.image.repeat,
-            fill: 'both',
-            delay: this.layer.image.sensor.start - Date.now()
-          }
-          this.$refs.image.animate(keyframes, timing)
+        if (this.layer.size.__typename === 'DimensionAnimation') {
+          animate(this.$refs.image, this.layer.size, value => ({ width: `${value * this.layer.repeat * 100}%` }))
         }
+        if (this.layer.left.__typename === 'DimensionAnimation') {
+          animate(this.$refs.image, this.layer.left, value => ({ left: `${value * 100}%` }))
+        }
+        animate(this.$refs.image, this.layer.image, value => ({ backgroundColor: torgba(value) }))
       }
     },
 
@@ -40,7 +38,7 @@
     },
 
     watch: {
-        'layer.image': 'setAnimation'
+        layer: 'setAnimation'
     }
   }
 </script>
