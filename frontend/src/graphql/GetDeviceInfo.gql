@@ -1,0 +1,9 @@
+query getDeviceInfo($id: ID!) {
+  device(id: $id) {
+    id
+    name
+    ledCount
+    ledStrip
+    gpioPin
+  }
+}

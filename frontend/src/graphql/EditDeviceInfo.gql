@@ -1,0 +1,11 @@
+mutation EditDeviceInfo($id: ID!, $device: DeviceInput!) {
+  updateDevice(id: $id, fields: $device) {
+    result {
+      id
+      name
+      ledCount
+      gpioPin
+      ledStrip
+    }
+  }
+}

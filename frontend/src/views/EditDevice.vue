@@ -31,6 +31,7 @@
                     <v-btn
                       :disabled="!!isLoading"
                       text
+                      :to="{ name: 'EditDeviceInfo', params: { id: $route.params.id } }"
                     >
                     Edit
                     </v-btn>

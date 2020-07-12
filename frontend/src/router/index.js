@@ -21,6 +21,13 @@ const routes = [
     path: '/devices/:id',
     name: 'EditDevice',
     component: () => import(/* webpackChunkName: "editDevice" */ '../views/EditDevice.vue'),
+    children: [
+      {
+        path: 'edit',
+        name: 'EditDeviceInfo',
+        component: () => import(/* webpackChunkName: "editDeviceInfo" */ '../views/EditDeviceInfo.vue')
+      }
+    ]
   }
 ]
 

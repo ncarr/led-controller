@@ -1,0 +1,12 @@
+query editDeviceInfoQuery {
+  devices {
+    id
+    name
+    ledCount
+    gpioPin
+    ledStrip
+    scene {
+      id
+    }
+  }
+}
