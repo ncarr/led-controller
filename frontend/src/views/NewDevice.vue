@@ -27,15 +27,15 @@
                   <v-text-field label="Device name" required v-model="device.name" :rules="[v => !!v || 'Name is required']" />
                 </v-col>
                 <v-col cols="12">
-                  <v-text-field label="Number of LEDs" required v-model="device.ledCount" type="number" :rules="[v => !!v || 'LED count is required', v => v >= 1 || 'At least 1 LED is required', v => v % 1 === 0 || 'Must be an integer']" />
+                  <v-text-field label="Number of LEDs" required v-model.number="device.ledCount" type="number" :rules="[v => !!v || 'LED count is required', v => v >= 1 || 'At least 1 LED is required', v => v % 1 === 0 || 'Must be an integer']" />
                 </v-col>
                 <v-col cols="12">
-                  <v-text-field label="GPIO pin number" required v-model="device.gpioPin" type="number" :rules="[v => !!v || 'GPIO pin number is required', v => v >= 0 || 'Must be nonnegative', v => v % 1 === 0 || 'Must be an integer']" />
+                  <v-text-field label="GPIO pin number" required v-model.number="device.gpioPin" type="number" :rules="[v => !!v || 'GPIO pin number is required', v => v >= 0 || 'Must be nonnegative', v => v % 1 === 0 || 'Must be an integer']" />
                 </v-col>
                 <v-col cols="12">
                   <v-radio-group label="LED strip type" v-model="device.ledStrip" :rules="[v => !!v || 'LED strip type is required']">
-                    <v-radio label="SK6812 (without white channel) or WS2812" :value="0x00081000" />
-                    <v-radio label="SK6812W" :value="0x18081000" />
+                    <v-radio label="RGB" :value="0x00081000" />
+                    <v-radio label="RGBW" :value="0x18081000" />
                   </v-radio-group>
                 </v-col>
               </v-row>
@@ -83,16 +83,11 @@
     methods: {
       updateCache(store, { data: { createDevice: { result } } }) {
         const data = store.readQuery({ query })
-        console.log(store)
-        console.log(data)
         data.devices.push(result)
-        console.log(data)
         store.writeQuery({
           query,
           data
         })
-        console.log(data)
-        console.log(store)
       }
     }
   }
