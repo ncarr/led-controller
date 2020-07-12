@@ -9,7 +9,6 @@ from sqlalchemy import Column, Integer, Float, String, ForeignKey, MetaData, Tab
 from sqlalchemy.orm import relationship, RelationshipProperty, ColumnProperty
 from sqlalchemy.ext.declarative import as_declarative, declared_attr
 from graphqlutils import input_to_dictionary, AnimationType, DimensionType
-from graphql_relay.node.node import from_global_id
 
 @as_declarative()
 class Base(object):
@@ -58,8 +57,8 @@ class Base(object):
   def create(cls, root, info, fields):
     value = input_to_dictionary(fields)
     orm_object = cls(**value)
-    cls.session.add(orm_object)
-    cls.session.commit()
+    info.context['session'].add(orm_object)
+    info.context['session'].commit()
     return orm_object
 
   """
@@ -70,12 +69,11 @@ class Base(object):
   """
   @classmethod
   def update(cls, root, info, id, fields):
-    _, db_id = from_global_id(id)
     value = input_to_dictionary(fields)
-    orm_object = cls.session.query(cls).filter(cls.id == db_id).one()
+    orm_object = info.context['session'].query(cls).filter(cls.id == id).one()
     for key in value:
       setattr(orm_object, key, fields[key])
-    cls.session.commit()
+    info.context['session'].commit()
     return orm_object
 
   """
@@ -84,10 +82,9 @@ class Base(object):
   """
   @classmethod
   def delete(cls, root, info, id):
-    _, db_id = from_global_id(id)
-    orm_object = cls.session.query(cls).filter(cls.id == db_id).one()
-    cls.session.delete(orm_object)
-    cls.session.commit()
+    orm_object = info.context['session'].query(cls).filter(cls.id == id).one()
+    info.context['session'].delete(orm_object)
+    info.context['session'].commit()
     return orm_object
 
 """
@@ -109,8 +106,8 @@ class Keyframe:
   def create(cls, root, info, animation_id, fields):
     value = input_to_dictionary(fields)
     orm_object = cls(animation_id=animation_id, **value)
-    cls.session.add(orm_object)
-    cls.session.commit()
+    info.context['session'].add(orm_object)
+    info.context['session'].commit()
     return orm_object
 
 
@@ -213,14 +210,14 @@ class Clock(Sensor):
     value = input_to_dictionary(fields)
     orm_object = cls(animation_id=animation_id, **value)
     if animation_type == AnimationType.COLOR:
-      cls.session.query(ColorAnimation).filter(
+      info.context['session'].query(ColorAnimation).filter(
           ColorAnimation.id == animation_id).one().sensor = orm_object
     elif animation_type == AnimationType.DIMENSION:
-      cls.session.query(DimensionAnimation).filter(
+      info.context['session'].query(DimensionAnimation).filter(
           DimensionAnimation.id == animation_id).one().sensor = orm_object
     else:
       raise ValueError('Invalid animation_type argument')
-    cls.session.commit()
+    info.context['session'].commit()
     return orm_object
 
 
@@ -258,7 +255,7 @@ class Dimension(Base):
   """
   @classmethod
   def create(cls, root, info, layer_id, dimension_type, fields):
-    layer = cls.session.query(Layer).filter(Layer.id == layer_id).one()
+    layer = info.context['session'].query(Layer).filter(Layer.id == layer_id).one()
     value = input_to_dictionary(fields)
     orm_object = cls(**value)
     if (dimension_type == DimensionType.SIZE):
@@ -267,7 +264,7 @@ class Dimension(Base):
       layer.left = orm_object
     else:
       raise ValueError('Invalid dimension_type argument')
-    cls.session.commit()
+    info.context['session'].commit()
     return layer
 
 
@@ -311,11 +308,11 @@ class Image(Base):
   """
   @classmethod
   def create(cls, root, info, layer_id, fields):
-    layer = cls.session.query(Layer).filter(Layer.id == layer_id).one()
+    layer = info.context['session'].query(Layer).filter(Layer.id == layer_id).one()
     value = input_to_dictionary(fields)
     orm_object = cls(**value)
     layer.image = orm_object
-    cls.session.commit()
+    info.context['session'].commit()
     return layer
 
 
@@ -428,8 +425,8 @@ class ColorStop(Keyframe, Base):
   def create(cls, root, info, gradient_id, fields):
     value = input_to_dictionary(fields)
     orm_object = cls(gradient_id=gradient_id, **value)
-    cls.session.add(orm_object)
-    cls.session.commit()
+    info.context['session'].add(orm_object)
+    info.context['session'].commit()
     return orm_object
 
 

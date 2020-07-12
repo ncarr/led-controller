@@ -4,7 +4,7 @@ import Home from '../views/Home.vue'
 
 Vue.use(VueRouter)
 
-  const routes = [
+const routes = [
   {
     path: '/',
     name: 'Home',
@@ -16,6 +16,11 @@ Vue.use(VueRouter)
         component: () => import(/* webpackChunkName: "newDevice" */ '../views/NewDevice.vue')
       }
     ]
+  },
+  {
+    path: '/devices/:id',
+    name: 'EditDevice',
+    component: () => import(/* webpackChunkName: "editDevice" */ '../views/EditDevice.vue'),
   }
 ]
 

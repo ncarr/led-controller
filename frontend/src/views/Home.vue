@@ -21,7 +21,7 @@
                 </v-col>
 
                 <v-col sm="12" md="6" lg="3" v-else v-for="device in data.devices" :key="device.id">
-                  <v-card>
+                  <v-card :to="{ name: 'EditDevice', params: { id: device.id } }">
                     <scene-view v-if="device.scene" :scene="device.scene" />
                     <v-card-title v-text="device.name" />
                     <v-card-subtitle v-if="device.scene">Scene: {{device.scene.name}}</v-card-subtitle>

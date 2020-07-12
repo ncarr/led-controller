@@ -1,20 +1,8 @@
 from copy import deepcopy
 from graphene import Mutation, ObjectType, Schema, String, Float, Argument, Field, ID, Union, List, Enum
 from graphene_sqlalchemy import SQLAlchemyObjectType, SQLAlchemyConnectionField
-from controller import Base, Device as DeviceModel, Scene as SceneModel, Animation as AnimationModel, Layer as LayerModel, Color as ColorModel, ColorAnimation as ColorAnimationModel, Gradient as GradientModel, ColorStop as ColorStopModel, ColorKeyframe as ColorKeyframeModel, DimensionAnimation as DimensionAnimationModel, StaticDimension as StaticDimensionModel, Clock as ClockModel, DimensionKeyframe as DimensionKeyframeModel
-from sqlalchemy import create_engine
-from sqlalchemy.orm import scoped_session, sessionmaker
+from controller import Device as DeviceModel, Scene as SceneModel, Animation as AnimationModel, Layer as LayerModel, Color as ColorModel, ColorAnimation as ColorAnimationModel, Gradient as GradientModel, ColorStop as ColorStopModel, ColorKeyframe as ColorKeyframeModel, DimensionAnimation as DimensionAnimationModel, StaticDimension as StaticDimensionModel, Clock as ClockModel, DimensionKeyframe as DimensionKeyframeModel
 from graphqlutils import SQLAlchemyInputObjectType, AnimationType, DimensionType
-
-engine = create_engine('sqlite:///data.sqlite3', convert_unicode=True)
-Base.metadata.create_all(engine)
-session = scoped_session(sessionmaker(autocommit=False,
-                                      autoflush=False,
-                                      bind=engine))
-
-Base.query = session.query_property()
-Base.session = session
-
 
 class Device(SQLAlchemyObjectType):
   class Meta:
@@ -55,11 +43,11 @@ class SetScene(Mutation):
 
   @staticmethod
   def mutate(root, info, device_id, scene_id):
-    device_object = session.query(DeviceModel).filter(DeviceModel.id == device_id).one()
-    scene_object = session.query(SceneModel).filter(SceneModel.id == scene_id).one()
+    device_object = info.context['session'].query(DeviceModel).filter(DeviceModel.id == device_id).one()
+    scene_object = info.context['session'].query(SceneModel).filter(SceneModel.id == scene_id).one()
     scene_copy = deepcopy(scene_object)
     device_object.scene = scene_copy
-    session.commit()
+    info.context['session'].commit()
     return SetScene(device=device_object)
 
 class Scene(SQLAlchemyObjectType):
@@ -395,10 +383,25 @@ class DeleteLayer(Mutation):
 
 class RootQuery(ObjectType):
   devices = List(Device)
+  device = Field(Device, id=ID(required=True))
+  scenes = List(Scene)
+  scene = Field(Scene, id=ID(required=True))
 
   def resolve_devices(self, info):
     query = Device.get_query(info)
     return query.all()
+
+  def resolve_device(self, info, id):
+    query = Device.get_query(info)
+    return query.filter(DeviceModel.id == id).one_or_none()
+
+  def resolve_scenes(self, info):
+    query = Scene.get_query(info)
+    return query.all()
+
+  def resolve_scene(self, info, id):
+    query = Scene.get_query(info)
+    return query.filter(SceneModel.id == id).one_or_none()
 
 
 class RootMutation(ObjectType):

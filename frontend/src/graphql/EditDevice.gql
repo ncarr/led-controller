@@ -1,0 +1,15 @@
+#import "./RenderableScene.gql"
+
+query editDevice($id: ID!) {
+  device(id: $id) {
+    name
+    ledCount
+    ledStrip
+    scene {
+      ...RenderableScene
+    }
+  }
+  scenes {
+    ...RenderableScene
+  }
+}
