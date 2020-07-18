@@ -1,0 +1,10 @@
+mutation SetScene($deviceId: ID!, $sceneId: ID) {
+  setScene(deviceId: $deviceId, sceneId: $sceneId) {
+    device {
+      id
+      scene {
+        id
+      }
+    }
+  }
+}

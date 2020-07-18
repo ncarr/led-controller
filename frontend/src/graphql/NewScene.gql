@@ -1,0 +1,11 @@
+mutation NewScene($scene: SceneInput!) {
+  createScene(fields: $scene) {
+    result {
+      id
+      name
+      layers {
+        id
+      }
+    }
+  }
+}

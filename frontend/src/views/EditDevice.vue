@@ -43,38 +43,49 @@
                 <v-card>
                   <v-card-title class="overline">Scene</v-card-title>
                   <grid-list :loading="isLoading" v-slot>
-                    <v-container>
-                      <v-row>
-                        <v-col sm="12" md="6" lg="3">
-                          <v-card :class="{ 'card-selection': !data.device.scene, 'text-center': true }">
-                            <v-icon class="mt-4">mdi-cancel</v-icon>
-                            <v-card-text>None</v-card-text>
-                          </v-card>
-                        </v-col>
+                    <apollo-mutation
+                      :mutation="require('@/graphql/SetScene.gql')"
+                      v-slot="{ mutate, loading, error: mutationError }"
+                    >
+                      <error-handler :error="mutationError" text="An error occurred setting the current scene." />
+                      <v-progress-linear indeterminate v-if="loading" />
+                      <v-container>
+                        <v-row>
+                          <v-col sm="12" md="6" lg="3">
+                            <v-card
+                              :class="{ 'card-selection': !data.device.scene, 'text-center': true }"
+                              @click="mutate(options(null))"
+                            >
+                              <v-icon class="mt-4">mdi-cancel</v-icon>
+                              <v-card-text>None</v-card-text>
+                            </v-card>
+                          </v-col>
 
-                        <v-col sm="12" md="6" lg="3" v-for="scene in data.scenes" :key="scene.id">
-                          <v-card
-                            :class="{ 'card-selection': data.device.scene && data.device.scene.id === scene.id }"
-                          >
-                            <scene-view :scene="scene" />
-                            <v-card-title>
-                              {{scene.name}}
-                              <v-spacer />
-                              <v-btn icon>
-                                <v-icon>mdi-pencil</v-icon>
-                              </v-btn>
-                            </v-card-title>
-                          </v-card>
-                        </v-col>
+                          <v-col sm="12" md="6" lg="3" v-for="scene in data.scenes" :key="scene.id">
+                            <v-card
+                              :class="{ 'card-selection': data.device.scene && data.device.scene.id === scene.id }"
+                              @click="mutate(options(scene))"
+                            >
+                              <scene-view :scene="scene" />
+                              <v-card-title>
+                                {{scene.name}}
+                                <v-spacer />
+                                <v-btn icon :to="{ name: 'DeviceEditScene', params: { device: $route.params.id, scene: scene.id } }" @click.stop>
+                                  <v-icon>mdi-pencil</v-icon>
+                                </v-btn>
+                              </v-card-title>
+                            </v-card>
+                          </v-col>
 
-                        <v-col sm="12" md="6" lg="3">
-                          <v-card class="text-center">
-                            <v-icon class="mt-4">mdi-plus</v-icon>
-                            <v-card-text>Add scene</v-card-text>
-                          </v-card>
-                        </v-col>
-                      </v-row>
-                    </v-container>
+                          <v-col sm="12" md="6" lg="3">
+                            <v-card class="text-center" :to="{ name: 'DeviceNewScene', params: { device: $route.params.id } }">
+                              <v-icon class="mt-4">mdi-plus</v-icon>
+                              <v-card-text>Add scene</v-card-text>
+                            </v-card>
+                          </v-col>
+                        </v-row>
+                      </v-container>
+                    </apollo-mutation>
                   </grid-list>
                 </v-card>
               </v-col>
@@ -100,6 +111,29 @@
       GridList,
       PlaceholderBlock,
     },
+    methods: {
+      options(scene) {
+        return {
+          variables: {
+            deviceId: this.$route.params.id, sceneId: scene ? scene.id : null
+          },
+          optimisticResponse: {
+            __typename: 'Mutation',
+            setScene: {
+              __typename: 'SetScene',
+              device: {
+                __typename: 'Device',
+                id: this.$route.params.id,
+                scene: scene ? {
+                  __typename: 'Scene',
+                  id: scene.id
+                } : null
+              }
+            }
+          }
+        }
+      }
+    }
   }
 </script>
 

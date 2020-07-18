@@ -1,0 +1,8 @@
+mutation EditSceneInfo($id: ID!, $scene: SceneInput!) {
+  updateScene(id: $id, fields: $scene) {
+    result {
+      id
+      name
+    }
+  }
+}

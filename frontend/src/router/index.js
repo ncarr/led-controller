@@ -26,8 +26,35 @@ const routes = [
         path: 'edit',
         name: 'EditDeviceInfo',
         component: () => import(/* webpackChunkName: "editDeviceInfo" */ '../views/EditDeviceInfo.vue')
+      },
+      {
+        path: 'scenes/new',
+        name: 'DeviceNewScene',
+        component: () => import(/* webpackChunkName: "newScene" */ '../views/NewScene.vue')
       }
     ]
+  },
+  {
+    path: '/scenes',
+    name: 'Scenes',
+    component: () => import(/* webpackChunkName: "scenes" */ '../views/Scenes.vue'),
+    children: [
+      {
+        path: 'new',
+        name: 'NewScene',
+        component: () => import(/* webpackChunkName: "newScene" */ '../views/NewScene.vue')
+      }
+    ]
+  },
+  {
+    path: '/scenes/:scene',
+    name: 'EditScene',
+    component: () => import(/* webpackChunkName: "editScene" */ '../views/EditScene.vue'),
+  },
+  {
+    path: '/devices/:device/scenes/:scene',
+    name: 'DeviceEditScene',
+    component: () => import(/* webpackChunkName: "editScene" */ '../views/EditScene.vue'),
   }
 ]
 

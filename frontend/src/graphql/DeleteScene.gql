@@ -1,0 +1,7 @@
+mutation DeleteScene($id: ID!) {
+  deleteScene(id: $id) {
+    result {
+      id
+    }
+  }
+}

@@ -1,0 +1,7 @@
+#import "./RenderableScene.gql"
+
+query editScene($scene: ID!) {
+  scene(id: $scene) {
+    ...RenderableScene
+  }
+}

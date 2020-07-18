@@ -37,16 +37,17 @@ class DeleteDevice(Mutation):
 class SetScene(Mutation):
   class Arguments:
     device_id = ID(required=True)
-    scene_id = ID(required=True)
+    scene_id = ID()
 
   device = Field(lambda: Device)
 
   @staticmethod
-  def mutate(root, info, device_id, scene_id):
+  def mutate(root, info, device_id, scene_id=None):
     device_object = info.context['session'].query(DeviceModel).filter(DeviceModel.id == device_id).one()
-    scene_object = info.context['session'].query(SceneModel).filter(SceneModel.id == scene_id).one()
-    scene_copy = deepcopy(scene_object)
-    device_object.scene = scene_copy
+    if scene_id:
+      device_object.scene = info.context['session'].query(SceneModel).filter(SceneModel.id == scene_id).one()
+    else:
+      device_object.scene = None
     info.context['session'].commit()
     return SetScene(device=device_object)
 

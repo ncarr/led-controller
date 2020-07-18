@@ -482,5 +482,5 @@ class Device(Base):
   led_strip = Column(Integer)
   name = Column(String)
   scene_id = Column(Integer, ForeignKey('scene.id'))
-  scene = relationship(Scene, cascade='all, delete-orphan', single_parent=True)
+  scene = relationship(Scene, cascade='all', single_parent=True)
 
