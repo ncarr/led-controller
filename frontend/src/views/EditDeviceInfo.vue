@@ -21,14 +21,9 @@
               v-model="valid"
               lazy-validation
             >
+              <error-handler :error="editError || queryError" text="An error occurred editing the device." />
               <v-container>
                 <v-row>
-                  <v-col v-if="editError || queryError">
-                    <v-card color="error">
-                      <v-card-title>An error occurred editing the device.</v-card-title>
-                      <v-card-subtitle v-text="editError || queryError" />
-                    </v-card>
-                  </v-col>
                   <v-col cols="12">
                     <v-text-field label="Device name" required v-model="device.name" :rules="[v => !!v || 'Name is required']" />
                   </v-col>
@@ -70,16 +65,7 @@
               >
                 <v-card>
                   <v-card-text>
-                    <v-container v-if="deleteError">
-                      <v-row>
-                        <v-col>
-                          <v-card color="error">
-                            <v-card-title>An error occurred deleting the device.</v-card-title>
-                            <v-card-subtitle v-text="deleteError" />
-                          </v-card>
-                        </v-col>
-                      </v-row>
-                    </v-container>
+                    <error-handler :error="deleteError" text="An error occurred deleting the device." />
                     Are you sure you want to delete this device? This action cannot be undone.
                   </v-card-text>
                   <v-card-actions>
@@ -117,9 +103,12 @@
 </template>
 
 <script>
-  import query from '@/graphql/EditDeviceInfoQuery.gql'
+  import ErrorHandler from '@/components/ErrorHandler'
   export default {
     name: 'EditDeviceInfo',
+    components: {
+      ErrorHandler
+    },
     data: () => ({
       confirmModal: false,
       dialog: true,
@@ -139,18 +128,8 @@
       }
     },
     methods: {
-      updateCache(store, { data: { deleteDevice: { result } } }) {
-        try {
-          const data = store.readQuery({ query })
-          data.devices = data.devices.filter(({ id }) => id !== result.id)
-          store.writeQuery({
-            query,
-            data
-          })
-        } catch (ignored) {
-          // Sometimes the cache won't have a device list yet
-          // In that case we have nothing to do
-        }
+      updateCache(cache, { data: { deleteDevice: { result } } }) {
+        cache.evict({ id: cache.identify(result) })
       }
     }
   }

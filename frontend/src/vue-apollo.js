@@ -28,6 +28,20 @@ const defaultOptions = {
   // Is being rendered on the server?
   ssr: false,
 
+  inMemoryCacheOptions: {
+    typePolicies: {
+      Device: {
+        fields: {
+          scene: {
+            read(scene, { canRead }) {
+              return canRead(scene) ? scene : null
+            }
+          }
+        }
+      }
+    }
+  },
+
   // Override default apollo link
   // note: don't override httpLink here, specify httpLink options in the
   // httpLinkOptions property of defaultOptions.

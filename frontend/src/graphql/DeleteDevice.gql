@@ -2,13 +2,6 @@ mutation DeleteDevice($id: ID!) {
   deleteDevice(id: $id) {
     result {
       id
-      name
-      ledCount
-      gpioPin
-      ledStrip
-      scene {
-        id
-      }
     }
   }
 }

@@ -3,7 +3,7 @@
     :mutation="require('@/graphql/NewDevice.gql')"
     :variables="{ device }"
     :update="updateCache"
-    @done="$router.push('/')"
+    @done="({ data: { createDevice: { result: { id } } } }) => $router.push({ name: 'EditDevice', params: { id } })"
     v-slot="{ mutate, loading, error }"
   >
     <v-dialog v-model="dialog">
@@ -15,14 +15,9 @@
             v-model="valid"
             lazy-validation
           >
+            <error-handler :error="error" text="An error occurred creating the device." />
             <v-container>
               <v-row>
-                <v-col v-if="error">
-                  <v-card color="error">
-                    <v-card-title>An error occurred creating the device.</v-card-title>
-                    <v-card-subtitle v-text="error" />
-                  </v-card>
-                </v-col>
                 <v-col cols="12">
                   <v-text-field label="Device name" required v-model="device.name" :rules="[v => !!v || 'Name is required']" />
                 </v-col>
@@ -60,9 +55,12 @@
 </template>
 
 <script>
-  import query from '@/graphql/NewDeviceQuery.gql'
+  import ErrorHandler from '@/components/ErrorHandler'
   export default {
     name: 'NewDevice',
+    components: {
+      ErrorHandler
+    },
     data: () => ({
       dialog: true,
       valid: false,
@@ -81,12 +79,13 @@
       }
     },
     methods: {
-      updateCache(store, { data: { createDevice: { result } } }) {
-        const data = store.readQuery({ query })
-        data.devices.push(result)
-        store.writeQuery({
-          query,
-          data
+      updateCache(cache, { data: { createDevice: { result } } }) {
+        cache.modify({
+          fields: {
+            devices(existingRefs = [], { toReference }) {
+              return [...existingRefs, toReference(result)]
+            }
+          }
         })
       }
     }
